@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-11T17:40:38.836Z from the AI control plane.
+> Generated 2026-10-12T14:33:32.446Z from the AI control plane.
 
-**Overall completion:** 122/157 executable tasks (78%)
+**Overall completion:** 122/163 executable tasks (75%)
 
 ## Status summary
 
@@ -10,8 +10,8 @@
 - **READY:** 2
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 13
-- **BLOCKED:** 13
+- **REVIEW:** 18
+- **BLOCKED:** 14
 - **DONE:** 122
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
@@ -44,12 +44,17 @@
 - **PL-0759** [REVIEW] The screen the operator is looking at is the only one that cannot say what failed — owner: claude-frontend
 - **PL-0756** [REVIEW] There is no way to browse the catalog: home shows two rails and search needs you to know the answer — owner: claude-frontend
 - **PL-0757** [REVIEW] The product readiness instrument reports two built surfaces as absent — owner: claude-infra
+- **PL-0760** [REVIEW] The home hero is a hard-coded sentence, so the first screen cannot say what this installation actually has — owner: claude-frontend
+- **PL-0761** [REVIEW] Search ranks by a four-value enum, so the result a viewer wanted can sort below one that merely contains the word — owner: claude-frontend
+- **PL-0762** [REVIEW] The player has no rate, no subtitle styling, no sync offset and no resume rule -- and no way to test one if it had — owner: claude-media
+- **PL-0763** [REVIEW] Live TV is a nav entry with no destination, and no code that could read a playlist if a licensed feed arrived — owner: claude-media
+- **PL-0764** [REVIEW] Watchlist, history, resume and preferences are four unrelated reads, so switching profile switches some of them — owner: claude-frontend
 
 ## Dispatch classification
 
 - **READY_AND_EXECUTABLE:** 2
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 13
+- **BLOCKED:** 14
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
@@ -145,14 +150,15 @@ WHAT WAS TRIED FIRST AND REFUSED. release is not permitted from REVIEW. DONE nee
 THE COST, STATED: unblocking discards gate results, so PL-0753's build and unit gates will need re-recording. Both are mine, both are one command, both are truthfully re-recordable. No review provenance is lost because no verdict exists yet -- and the security-review it is waiting for is the gate most worth not disturbing, which is why nothing about its evidence is being touched.
 
 UNBLOCK WHEN: gpt-architect's security-review arrives, or PL-0754 has cleared the directory -- whichever is first. This task's own work needs nothing further.
+- **PL-0766** The installed application has neither a catalog source nor a data store, so nothing it shows can ever be a fact: reason not recorded
 
 ## Agent capacity
 
 - **gpt-architect:** 0/6 capacity in use (external lane; not locally executable)
 - **claude-lead:** 0/2 capacity in use, 2 active (2 parked for an external reviewer)
-- **claude-frontend:** 0/2 capacity in use, 2 active (2 parked for an external reviewer)
+- **claude-frontend:** 0/5 capacity in use, 5 active (5 parked for an external reviewer)
 - **claude-backend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
-- **claude-media:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
+- **claude-media:** 0/2 capacity in use, 3 active (3 parked for an external reviewer)
 - **claude-test:** 0/3 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-security:** 0/1 capacity in use
 - **claude-infra:** 0/5 capacity in use, 6 active (6 parked for an external reviewer)

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-11T17:40:38.842Z",
+  "generatedAt": "2026-10-12T14:33:32.452Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
@@ -36,6 +36,140 @@
           "by": "claude-media",
           "commitSha": "22517d66e02f3adc4468ddcffe6ff033e82db52d",
           "evidence": "cargo clippy --locked --all-targets -D warnings: clean for BOTH x86_64-pc-windows-msvc and the host. cargo fmt --check: clean. repo:validate passed. Cargo.lock UNCHANGED -- no new dependency, no version moved.\n\nTHIS GATE REPLACES THE ONE RECORDED AGAINST 2af8855, WHICH WAS A GATE ON CODE WITH A CONFIRMED DEFECT. The previous evidence said \"the harness compiles for Windows and the API surface it targets exists\", and that was true. It was not sufficient: the code it passed put the video visual ABOVE the web visual, contradicting this task's own stated requirement. The task was returned to IN_PROGRESS with `start` rather than by fabricating a reviewer verdict, and this is the re-record.\n\nTHE DEFECT, PROVEN AGAINST MICROSOFT'S DOCUMENTATION RATHER THAN GUESSED. IDCompositionVisual::AddVisual's Remarks: \"If the referenceVisual parameter is NULL, the specified visual is rendered above or below all children of the parent visual, depending on the value of the insertAbove parameter. If insertAbove is TRUE, the new child visual is above no sibling, therefore it is rendered BELOW all of its siblings. Conversely, if insertAbove is FALSE, the visual is below no sibling, therefore it is rendered ABOVE all of its siblings.\" With a NULL reference the flag is INVERTED relative to its own name. The delivered code called AddVisual(video, false, None) -- video rendered above all siblings -- and AddVisual(web, true, None) -- web rendered below all siblings. An opaque full-window video swapchain on top of the webview, which is precisely the commander's observation: video visible and playing, no HTML whatsoever. The source comment above those two lines asserted the opposite semantics and was written without reading the documentation, inside a comment that called this \"the one thing this experiment must get right\".\n\nTHE CORRECTION, IN A FORM THAT CANNOT FAIL THE SAME WAY. Video: AddVisual(video, true, None), which the quoted Remarks define as \"rendered below all of its siblings\". Web: AddVisual(web, true, Some(&video)) -- the EXPLICIT reference form, where the parameter means what its name says, \"TRUE to place the new child visual in front of the visual specified by the referenceVisual parameter\", and there is no counterintuitive NULL case left to misread. The quotation is in the source above the call so the next reader does not have to find it.\n\nTWO FURTHER OMISSIONS, EACH A DOCUMENTED REQUIREMENT THE HARNESS WAS NOT MEETING, AND EACH CAPABLE OF PRODUCING THE SAME SYMPTOM ALONE:\n  1. NO Commit AFTER SetRootVisualTarget. Microsoft's RootVisualTarget reference: \"The app needs to commit on its device setting the RootVisualTarget property\", and their sample calls Commit immediately after. The harness committed only when mpv's swapchain arrived -- roughly a second later, and never at all if it did not arrive -- which would have left the webview unattached for a reason no log line named. Tree::commit_named now commits there and logs it.\n  2. SetIsVisible WAS NEVER CALLED. Zero occurrences of IsVisible in the previous source. ICoreWebView2Controller's reference says \"If IsVisible is set to FALSE, the WebView2 is transparent and is not rendered\" and documents NO DEFAULT for a composition-hosted controller; I could not establish one from Microsoft's pages. So the harness now READS IsVisible and logs the value found BEFORE setting it -- which settles empirically on the commander's machine what the documentation does not state -- and then sets it true regardless.\n\nTHE DIAGNOSTIC THAT WOULD HAVE MADE THIS ONE ROUND INSTEAD OF TWO. NavigateToString returning Ok means the navigation was QUEUED, the same distinction Experiment 1a lost a round to with loadfile. Four causes -- never navigated, navigated but the script never ran, rendered into a zero-area viewport, rendered but invisible -- produced one symptom and nothing could separate them. Added: add_NavigationCompleted reporting IsSuccess and, on failure, the WebErrorStatus number; add_DOMContentLoaded via ICoreWebView2_2, with a runtime too old to offer it reported rather than propagated as an error; and the page's own script posting a page-alive message carrying innerWidth, innerHeight, devicePixelRatio and the panel's measured offsetHeight. A 0x0 viewport now looks nothing like a z-order fault. Both handlers are installed BEFORE navigate(), so the first navigation cannot complete unobserved.\n\nTHE VIDEO RENDERER IS UNTOUCHED, as instructed. Same mpv property set, same --d3d11-output-mode=composition, same --d3d11-composition-size, same display-swapchain polling, same borrowed-not-adopted SetContent, same attach logic, same resize path. The part of the run that worked was not edited.\n\nALL THREE CHANGED MODULES ARE REALLY COMPILED FOR WINDOWS, proved rather than assumed: deliberate type errors inserted simultaneously into dcomp.rs (a string as AddVisual's referenceVisual), web.rs (a string to SetIsVisible) and host.rs (an i32 to on_load) produced exactly 3 errors, naming src/dcomp.rs:149, src/web.rs:271 and src/host.rs:159. All reverted.\n\nNO NEW DEPENDENCY. add_NavigationCompleted, add_DOMContentLoaded, NavigationCompletedEventArgs::IsSuccess/WebErrorStatus, ICoreWebView2_2, ICoreWebView2Controller::IsVisible/SetIsVisible and webview2-com's NavigationCompletedEventHandler/DOMContentLoadedEventHandler wrappers were all already in the locked webview2-com-sys 0.39.1 and webview2-com 0.39.1. The lockfile is byte-identical.\n\nNOT CLAIMED: that the overlay now appears. NOTHING HERE HAS RUN. What the commander's run established is that the video path works end to end on real hardware -- video visible and moving, hardware decode on an RTX 3050, DComp tree built, swapchain attached, composition controller initialised -- and that is kept. Whether the two layers composite with real alpha is what the next run decides, and there are now THREE possible outcomes rather than two: both layers visible and the gradient tinting (the pass); HTML visible with no video (a NEW failure, meaning composition hosting ignores DefaultBackgroundColor rather than that the layering is wrong); or still no HTML (the z-order was not the only cause, and the four new log lines say which stage stopped). Experiment 1c is NOT PASS, Experiment 1a remains FAIL, PW-0103 is untouched and decision D1 is unchanged and with gpt-architect under PL-0751."
+        }
+      }
+    },
+    {
+      "dependencies": [],
+      "reviewDependencies": [
+        "packages/media-engine",
+        "apps/web/src/lib/continue-watching.ts",
+        "apps/web/src/lib/viewer-preferences.ts"
+      ],
+      "reviewAgent": "gpt-architect",
+      "status": "REVIEW",
+      "notes": "FILED 2026-10-12 as part of Wave 132.",
+      "id": "PL-0762",
+      "priority": "P1",
+      "lane": "Player",
+      "preferredAgent": "claude-media",
+      "title": "The player has no rate, no subtitle styling, no sync offset and no resume rule -- and no way to test one if it had",
+      "allowedPaths": [
+        "apps/web/src/components/player"
+      ],
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "THE SHAPE OF THIS TASK, STATED FIRST BECAUSE IT IS THE HONEST ONE. apps/web/vitest.config.ts is environment: \"node\": there is no DOM, no HTMLMediaElement and no app-router context, so no control can be verified by driving a real element here. Every item below is therefore delivered as a pure model over a narrow injected port plus an adapter, and the classification of what is actually proven is part of the deliverable.\n\nREQUIRED: PLAYBACK RATE AS A CLOSED SET, NOT A NUMBER. An arbitrary rate is a way to hand the element a value it will clamp silently. The allowed rates are enumerated, a requested rate is resolved to the nearest allowed one, stepping saturates rather than wrapping, and the adapter refuses an off-list rate rather than clamping it a second time. The element is the authority on the current rate: the adapter publishes what the element reports and publishes nothing for an unreadable reading rather than emitting NaN.\n\nREQUIRED: SUBTITLE STYLING THAT CANNOT CARRY CSS. A stored style is attacker-influenced data the moment it round-trips through a profile record. Styling is therefore tokens only, decode reports a named reason per rejected field, and a stored value such as a colour with a trailing declaration is REFUSED rather than sanitised -- sanitising is the weaker property, because it claims to have removed everything dangerous.\n\nREQUIRED: OFFSETS THAT DO NOT DRIFT. Subtitle and audio synchronisation offsets snap to integer steps so repeated nudges cannot accumulate float error, saturate at their bounds, and have a reset.\n\nREQUIRED: A RESUME RULE WITH AN ABSTENTION. Near the start and near the end both mean restart, not resume, and an unreadable position means the decision declines to supply one rather than supplying zero -- a resume decision that returns 0 is indistinguishable from \"start at the beginning\" and would silently discard a real position. Thresholds duplicated from the server module must be held to parity by a test that fails if either side moves.\n\nREQUIRED: CAPABILITY DETECTION THAT NEVER CLAIMS HARDWARE. The probe reports what the browser reported and names its source; \"unknown\" is a first-class answer. A method read off a capabilities object must be invoked on its owner, or it throws.\n\nREQUIRED: A DECLARATIVE KEYMAP. A key event resolves to a named command in a tested module and the component dispatches; no key reaches a seek fraction of 100%; a focused text input keeps its keys.\n\nMUST NOT: promote an experimental native player, or presume the unresolved native-hosting decision. MUST NOT ship a control that moves and changes nothing -- a slider with no actuation is worse than its absence, because it reports a capability the product does not have. State plainly which items are models with no UI.",
+      "owner": "claude-media",
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-10-12T14:33:31.507Z",
+      "implementationBaseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+        "reconciledAt": "2026-10-12T14:30:17.639Z",
+        "reconciledBy": "claude-media",
+        "implementationAgent": "claude-media",
+        "headAtReconciliation": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b",
+        "newestSurfaceCommit": "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b",
+        "surfaceCommits": [
+          "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 19,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "Wave 132 ran nine workstreams in parallel from this commit; all five implementations were written, tested and committed before any of these tasks was filed, because the tasks were derived from the finished disjoint surfaces rather than the reverse. 62c88fa is the branch tip at which every worker started and the last commit before any Wave 132 code exists."
+      },
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:13.140Z",
+          "by": "claude-media",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 pre-existing warnings. npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. npm run build:desktop -w @liberty/web built and apps/desktop/scripts/package-sidecar.mjs laid the packaged tree out from it; apps/desktop/scripts/packaged-server-smoke.mjs then passed 7 checks against the relocated artifact, including 16 distinct non-builtin external specifiers across 159 chunks all resolvable and no symlink anywhere in the tree -- so this change did not disturb the packaging fixes of rounds 130 and 130A."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:13.444Z",
+          "by": "claude-media",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx vitest run --root apps/web src/components/player: 28 files, 636 tests passing. npx vitest run --root packages/media-engine: 13 files, 373 passing, 1 skipped (unchanged by this task). Whole suite: 127 files, 2548 tests. New: playback-rate 51, subtitle-style 26, timing-offset 41, resume-decision 35, decode-capability 37. WHAT IS ACTUALLY PROVEN, AND THE HONEST ANSWER IS NOT 'the controls work'. This suite is environment node: no DOM, no HTMLMediaElement. Every item is a pure model over an injected port plus an adapter, and what the tests pin are the properties that survive that: a rate off the allowed list is REFUSED by the adapter rather than clamped twice (a second clamp hides a caller bug); the element remains the authority on the current rate and an unreadable reading publishes nothing rather than emitting NaN; a stored subtitle style carrying a CSS declaration is refused rather than sanitised, and Object.hasOwn blocks __proto__ in the decoder; offsets snap to integer steps so repeated nudges cannot accumulate float error; resume has a third outcome, ignore, which yields startAtSeconds null -- returning 0 there is indistinguishable from start-at-the-beginning and would silently discard a real stored position; resume thresholds are mirrored rather than imported (importing lib/continue-watching.ts would pull @liberty/catalog-ingestion into the client bundle) and a parity test fails if either side moves; decodingInfo is bound to its owner, because a detached host method throws an illegal invocation. FIXED IN PASSING, AND IT IS THE CLASS UNDER INVESTIGATION THIS ROUND: player-controls.tsx probed window.matchMedia and then called addEventListener on the QUERY OBJECT unguarded. That throw happens inside useSyncExternalStore's subscribe, which takes the whole surface down. Now probed on the object it is called on, with an addListener fallback and a catch. CLASSIFICATION, strictly: nothing here is (a) functional-and-tested, because no real media element is observable in this environment. Rate end-to-end through the adapter, the keymap and dispatch, decode detection and the resume decision are (b) implemented and unit-tested. SUBTITLE STYLING AND BOTH SYNC OFFSETS SHIPPED AS MODELS WITH NO UI, deliberately: re-timing cues is not implemented and HTMLMediaElement has no audio-delay API at all, so a slider would report a capability the product does not have. ITEM 5 WAS ALREADY DONE: playback-machine.ts already has an 11-phase chart with buffering and recovering, a bounded retry budget and a reason trail; a second machine would have been duplication. FINDING, reported not fixed: resolveTracks has no production caller -- only its own test -- so automatic track resolution is dead code and only manual menu selection reaches the adapter. D1 untouched; no experimental player promoted."
+        }
+      }
+    },
+    {
+      "dependencies": [],
+      "reviewDependencies": [
+        "docs/CONTENT_RIGHTS.md",
+        "apps/web/src/lib/authorization",
+        "apps/web/src/components/shell/navigation.ts"
+      ],
+      "reviewAgent": "gpt-architect",
+      "status": "REVIEW",
+      "notes": "FILED 2026-10-12 as part of Wave 132.",
+      "id": "PL-0763",
+      "priority": "P2",
+      "lane": "Live",
+      "preferredAgent": "claude-media",
+      "title": "Live TV is a nav entry with no destination, and no code that could read a playlist if a licensed feed arrived",
+      "allowedPaths": [
+        "apps/web/src/lib/livetv",
+        "apps/web/src/components/live",
+        "apps/web/src/app/live",
+        "media/fixtures/livetv"
+      ],
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "THE BOUNDARY THIS TASK IS WRITTEN AROUND. Live acquisition is blocked on licensed feed access and stays blocked. What is missing is not a channel source: it is the parsing, authorization, organisation and presentation layer that a licensed feed would feed, and the tests that would catch it being wrong. Building that layer must not create a path by which a synthetic fixture reaches a viewer looking like a channel.\n\nREQUIRED: BOTH PARSERS ARE HAND-WRITTEN AND TOTAL. No parsing dependency is added. The M3U reader returns per-line diagnostics instead of throwing, and handles the real malformations: quoted attributes with escaped quotes, a BOM, CRLF, a missing trailing newline, an entry with no URL, an attribute with no value, duplicates. It never follows a URL. The XMLTV reader REFUSES a DOCTYPE or entity declaration outright rather than attempting to parse it safely -- that is the XXE class, and refusal is the only property worth asserting -- and is bounded in input size.\n\nREQUIRED: TIME ZONES ARE DATA, NOT AN ASSUMPTION. A timestamp's offset is parsed from the feed, instants are stored in UTC, and rendering takes the zone from the caller. Offsets that are not whole hours, a programme crossing midnight and a programme crossing a DST boundary are each tested.\n\nREQUIRED: NOW AND NEXT COME FROM AN INJECTED CLOCK. Logic that reads Date.now() internally cannot be tested at a boundary, and the gap case -- nothing scheduled -- must be a named state rather than an empty object.\n\nREQUIRED: THE RIGHTS GATE IS ON THE PATH, NOT BESIDE IT. Every channel reaches the surface through the existing authorization, each rejection carries a named reason, and a channel whose origin is not held is dropped rather than shown with a warning.\n\nREQUIRED: THE SHIPPED CONFIGURATION TELLS THE TRUTH. With no licensed feed registered, /live states that no feed is configured. A test must scan the surface's own modules and FAIL if any of them names the fixtures directory, a fixture filename, or calls the feed registrar -- because the tempting move, with a finished parser and no feed, is exactly to register the fixtures so the screen has something on it.\n\nREQUIRED: ERROR REPORTING THAT LEAKS NOTHING. A stream failure is reported as a named class, with no URL and no credential in the message.\n\nMUST NOT: bundle a channel list, hard-code a third-party credential, make a network call, or weaken the gate. Fixtures must be obviously synthetic so that no reader can mistake one for a shipped channel.",
+      "owner": "claude-media",
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-10-12T14:33:31.847Z",
+      "implementationBaseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+        "reconciledAt": "2026-10-12T14:30:17.972Z",
+        "reconciledBy": "claude-media",
+        "implementationAgent": "claude-media",
+        "headAtReconciliation": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "5bb8e8b9126813ec155268e78c8b20df3db850da",
+        "newestSurfaceCommit": "5bb8e8b9126813ec155268e78c8b20df3db850da",
+        "surfaceCommits": [
+          "5bb8e8b9126813ec155268e78c8b20df3db850da"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 33,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "Wave 132 ran nine workstreams in parallel from this commit; all five implementations were written, tested and committed before any of these tasks was filed, because the tasks were derived from the finished disjoint surfaces rather than the reverse. 62c88fa is the branch tip at which every worker started and the last commit before any Wave 132 code exists."
+      },
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:49.177Z",
+          "by": "claude-media",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 pre-existing warnings. npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. npm run build:desktop -w @liberty/web built and apps/desktop/scripts/package-sidecar.mjs laid the packaged tree out from it; apps/desktop/scripts/packaged-server-smoke.mjs then passed 7 checks against the relocated artifact, including 16 distinct non-builtin external specifiers across 159 chunks all resolvable and no symlink anywhere in the tree -- so this change did not disturb the packaging fixes of rounds 130 and 130A. Three eslint ERRORS in this task's own live-page-data.test.ts were found and fixed before this was recorded: a loop variable named module, which @next/next/no-assign-module-variable refuses. Renamed; the file's 18 tests still pass."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:49.534Z",
+          "by": "claude-media",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx vitest run --root apps/web over this task's 12 files: 214 tests passing (4.40s). Whole suite: 127 files, 2548 tests. shell-usage.test.ts re-run unmodified to confirm /live satisfies its page-exists rule: 16 passing. WHAT THE TESTS PIN, and the first one is the only one that matters for rights. (1) NO FIXTURE CAN REACH THE SURFACE. live-page-data.test.ts reads the SOURCE of live-page-data.ts, live-surface.tsx, app/live/page.tsx and feed-configuration.ts and fails if any of them names testing/fixtures, media/fixtures, any fixture filename, or calls registerLiveFeed. That rule exists because the tempting move with a finished parser and no feed is to register the synthetic fixtures as a development feed so the screen has something on it -- which is exactly how a synthetic channel list ends up in front of a viewer. Nothing in the repository calls registerLiveFeed, so /live renders: Live TV is not available on this installation -- no licensed live feed configured. (2) THE XMLTV READER REFUSES A DOCTYPE OR ENTITY DECLARATION OUTRIGHT rather than parsing it carefully; hostile-doctype-epg.xml is a committed fixture for it. Refusal is the only assertable property here -- a parser that claims to have handled entities safely is the XXE defect with a comment on it. (3) TIME ZONES ARE DATA: offsets parsed from the feed, instants stored UTC, rendering from a caller-supplied zone, with a +0530 and a -0330 case, a programme crossing midnight and one crossing a DST boundary. (4) NOW/NEXT TAKES AN INJECTED CLOCK and names six states including the gap where nothing is scheduled. (5) The M3U reader is total: BOM, CRLF, missing trailing newline, escaped quotes inside quoted attributes, an entry with no URL, an attribute with no value, duplicates -- each returns diagnostics rather than throwing, and the reader never follows a URL. (6) Stream errors are named classes with shape-based redaction, asserted to carry no URL and no credential. CLASSIFICATION. (a) functional and tested: the shipped unconfigured verdict, the rights gate admitPlaylistChannels and its refusal vocabulary, both parsers, zone handling, channel organisation, now/next, duplicate handling, cache policy, error redaction. (b) unit-tested only: the configured-feed path of the surface, which runs only when a feed is injected in a test. (c) nothing. (d) not done: live acquisition itself (PL-0602, unchanged), a durable favourites/EPG store, carrying the viewer's real zone on a server render (falls back to UTC unless ?tz= is given), and #EXTVLCOPT/#KODIPROP which are reported and ignored rather than honoured. NO REAL FEED IS CONFIGURED and this task does not configure one. rights-review is required and is NOT recorded here: it is gpt-architect's, and an implementer who could record it could complete their own rights decision."
         }
       }
     }

@@ -15311,7 +15311,11 @@
         "apps/web/src/app/error-boundaries.test.tsx",
         "apps/web/src/lib/diagnostics",
         "apps/web/src/app/api/v1/diagnostics",
-        "apps/web/src/proxy.ts"
+        "apps/web/src/proxy.ts",
+        "apps/web/src/lib/network-state.ts",
+        "apps/web/src/components/state/reachability-store.ts",
+        "apps/web/src/components/state/reachability-store.test.ts",
+        "apps/web/src/lib/network-state.test.ts"
       ],
       "reviewDependencies": [
         "apps/web/src/lib/sidecar/policy.ts",
@@ -15323,28 +15327,29 @@
       "reviewAgent": "gpt-architect",
       "qualityGates": [
         "typecheck",
-        "unit"
+        "unit",
+        "security-review"
       ],
       "acceptance": "THE SYMPTOM, FROM THE OPERATOR'S INSTALLED MSI AT f02703e. Windows package, desktop shell and CI all pass. The MSI installs, the native window opens, the bundled node starts, and the handshake completes -- liberty-sidecar-ready {\"host\":\"127.0.0.1\",\"port\":62699}, followed by \"catalog metadata source: none requested\", which proves instrumentation ran to completion and the sidecar process is healthy. The window then displays:\n\n  Project Liberty could not start this page\n  Something failed before the application frame could render.\n\nTHAT TEXT IS apps/web/src/app/global-error.tsx, AND IT IS THE ONE SCREEN IN THIS APPLICATION THAT CANNOT SAY WHAT WENT WRONG. The component's signature was `{ reset }` -- it never declared Next's `error` argument, so the error was dropped at the parameter list. It logged nothing. It showed no digest. And its own comment said \"The log has it\", which was FALSE: nothing anywhere wrote it. Three rounds of Windows work were spent guessing at a failure that was reporting itself to nobody.\n\nWHAT ITS PRESENCE ALREADY TELLS US, AND IT NARROWS THE PROBLEM A LOT. global-error renders only when the render fails at or above the root layout. For the operator to be looking at it, the window had ALREADY navigated to the sidecar origin, the document request had ALREADY passed the 403 request guard, and Next had ALREADY served HTML. So this is not PL-0753's class and not the shell's supervision path -- surface_failure drives the bundled splash, which contains none of this text. It is a render or hydration failure inside the application.\n\nWHAT THIS TASK DOES NOT DO, STATED FIRST BECAUSE IT IS THE HONEST SHAPE OF IT: it does not fix the render failure. The failure cannot be identified from this session. The packaged production artifact was booted here and GET / answers 200 with the real application -- the app shell, the skip link, the navigation including Browse, 2 inline scripts and 10 script tags all carrying a CSP nonce. So the defect does not reproduce on Linux from the same tree, and nothing records it on Windows. This task makes it RECORD ITSELF, which is the only thing that can end the guessing.\n\nREQUIRED: THE BOUNDARY RECEIVES THE ERROR AND SURFACES THE DIGEST. The existing reasoning was half right -- a root-layout failure can carry a stack trace and a digest is the only thing safe to show. It then omitted the digest too. A digest is Next's own correlation id, lowercase hex, no message and no path; showing it is what lets an operator quote one line that matches a line in the log. When Next minted none, the page says so rather than leaving a blank where a reference should be.\n\nREQUIRED: THE REPORT REACHES THE FILE THE OPERATOR ALREADY PASTES. The Rust shell captures the sidecar's stdout and stderr, redacts tokens, budget-caps the volume and writes %LOCALAPPDATA%\\app.projectliberty.desktop\\logs\\sidecar.log. A browser-side failure had no route into it -- console.error in the page goes to the webview's console, which nothing captures. One POST to a local diagnostics route closes the gap and adds no file, no port and no new place to look.\n\nREQUIRED: NO MESSAGE AND NO STACK CROSS THAT BOUNDARY. A message from a server component can carry a file path, a connection string, a query or a token; a stack carries build paths. The report is five bounded fields -- boundary, pathname with the query and fragment REMOVED, digest matched against lowercase hex, error name matched against an identifier pattern, and hadMessage as a BOOLEAN so a reader can tell an error that said nothing from one whose text was withheld. The server re-sanitises with the same rules rather than believing a body because it came from our own page.\n\nREQUIRED: THE REPORTER CANNOT BE THE FAILURE. It is called from the last-resort boundary, which must not import the shell, the stylesheet, or anything that could be what just failed. The module imports NOTHING -- no React, no CSS, no contract package -- is total against anything JavaScript can throw including a throwing getter, and swallows every failure of its own.\n\nREQUIRED: A REFUSAL LEAVES A TRACE. The request guard answers 403 with no body and no reason, deliberately, so the wire cannot be used as an oracle for which check failed -- and the consequence nobody accounted for is that a refusal left no trace ANYWHERE, which is why \"does the installed WebView get 200 or 403\" was unanswerable from the machine that served it. The wire is unchanged. The server-side log records the method, the path without its query, and whether a token header and a Host header were PRESENT -- no header value, and not which check failed. Between them those separate a webview that never attaches the token from one that attaches it to some requests and not others, from a Host mismatch, from a request that is not ours.\n\nREQUIRED: BOTH LOGS ARE BUDGETED. One refused page load is dozens of refusals and a remount loop reports continuously; the line that matters is the first one. The budget keeps the first few per window, drops the rest, and says once per window how many it dropped -- so the log states that it stopped recording rather than appearing to say the failures stopped.\n\nMUST NOT: weaken the request guard, change what the wire says, widen what the 403 reveals, or record any header value, token, query string or user data.\n\nMUST NOT: claim the startup failure is fixed. It is not diagnosed. What this earns is that the next MSI run will say what failed, in the file the operator already sends.",
-      "notes": "FILED 2026-10-11 from the Wave 131 operator report. Two recon findings were checked and REJECTED before this was written: that the packaged proxy fails to forward a CSP nonce (the live packaged response carries a nonce on all 12 script tags), and that the homepage is served as an error page on Linux (it is the real application, 200). Both came from subagent reads of prerendered build output rather than of a live response.",
+      "notes": "FILED 2026-10-11 from the Wave 131 operator report. Two recon findings were checked and REJECTED before this was written: that the packaged proxy fails to forward a CSP nonce (the live packaged response carries a nonce on all 12 script tags), and that the homepage is served as an error page on Linux (it is the real application, 200). Both came from subagent reads of prerendered build output rather than of a live response. WAVE 132: surface widened by two modules and one gate added, deliberately. The frame-capture work added to the report two fields that cross a diagnostic boundary the task's own acceptance had closed (`shape`, derived from the message; `frames`, derived from the stack), so `security-review` is now required rather than trusted. network-state.ts and reachability-store.ts were added because the browser measurement named them: the frame the new capture produced resolved to an unguarded `navigator.onLine` in observeBrowser, forty lines below a guarded reader it did not use. Shipping a diagnostic for that class while leaving the measured instance in place would have been absurd.",
       "owner": "claude-frontend",
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-11T17:29:55.775Z",
+      "updatedAt": "2026-10-12T14:33:30.466Z",
       "implementationBaseSha": "f02703e88c8bbe4dc8c5141b3b21bd4b7b50fdc0",
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-10-11T17:29:54.994Z",
+          "at": "2026-10-12T14:33:17.013Z",
           "by": "claude-frontend",
-          "commitSha": "52213cf26a4c57572a99e6044f4a9c6b878d3090",
-          "evidence": "TYPECHECK, at 52213cf26a4c57572a99e6044f4a9c6b878d3090.\n\nnpm run typecheck (turbo, whole repository): 22 tasks successful, 22 total. npx tsc --noEmit -p apps/web clean. npm run repo:validate passed. npm run ai:validate: 159 tasks, 9 agents. npx eslint . --ignore-pattern \"dist/**\" in apps/web: 0 errors, 2 warnings, both pre-existing in files this change does not touch (api/v1/profiles/preferences/handler.test.ts, lib/db/in-memory-repository.test.ts). A third warning was mine -- an import left unused after two tests were removed -- and it is gone.\n\nAND THE ROUTE COMPILES AS A ROUTE. npm run build:desktop -w @liberty/web lists /api/v1/diagnostics/client-failure in its route table. A diagnostics endpoint that type-checks but does not register would be the exact failure mode this task exists to remove.\n\nTWO RECON FINDINGS WERE CHECKED AND REJECTED BEFORE ANY CODE WAS WRITTEN, and recording that is part of the evidence because both would have sent this round somewhere wrong.\n\n(1) \"proxy.ts mints a CSP nonce but never forwards it into the request headers, so every inline Next script is CSP-blocked in the installed build.\" Measured instead: the packaged production artifact was booted and GET / inspected. The response CSP is script-src 'self' 'nonce-<32 hex>'; the body carries 2 inline <script> tags and 10 <script src> tags, and ALL TWELVE carry nonce=. The finding came from reading the PRERENDERED _global-error.html, which has no nonce because it was rendered at build time with no request. Not a defect.\n\n(2) The implied reading that the homepage is served as an error page. Measured: GET / is 200, 15378 bytes, and contains skip-link, class=\"shell\", the nav with Browse/Search/Watchlist, and the catalog state panel. It does NOT contain \"could not start this page\". So the operator's failure does not reproduce on Linux from this tree.\n\nWHAT IS ESTABLISHED ABOUT THE OPERATOR'S FAILURE, AND IT IS NARROWER THAN A FIX. The text is apps/web/src/app/global-error.tsx, which Next renders only when the render fails at or above the root layout. For it to be on screen: the window had navigated to the sidecar origin, the document request had passed the 403 guard, and Next had served HTML. So it is not PL-0753's 403 class, and not the shell's supervision path -- surface_failure drives apps/desktop/dist/index.html, which contains none of this wording. It is a render or hydration failure inside the application, on Windows, that does not occur here.\n\nWHAT IS NOT ESTABLISHED: which failure. I did not identify it and this task does not claim to. The reason it could not be identified is the thing being fixed: the boundary took only `reset`, so Next's `error` argument was dropped at the parameter list; it logged nothing; it showed no digest; and its comment said \"The log has it\" while nothing wrote it."
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 pre-existing warnings. npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. AND THE PACKAGED RUNTIME WAS REBUILT AND SMOKED, which matters here because this task's whole value is a diagnostic that must survive production bundling: npm run build:desktop -w @liberty/web built, apps/desktop/scripts/package-sidecar.mjs laid out the tree, its 20 external-link policy tests passed, and packaged-server-smoke.mjs passed 7 checks against the relocated artifact -- 16 distinct non-builtin external specifiers across 159 chunks all resolvable, no symlink anywhere in the tree, /api/health 200, / 200 at 16759 bytes carrying skip-link, class=shell and id=main and not carrying the error headline."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-10-11T17:29:55.395Z",
+          "at": "2026-10-12T14:33:17.367Z",
           "by": "claude-frontend",
-          "commitSha": "52213cf26a4c57572a99e6044f4a9c6b878d3090",
-          "evidence": "UNIT, at 52213cf26a4c57572a99e6044f4a9c6b878d3090.\n\nnpx vitest run --root apps/web: 100 files, 1772 tests, all passing, 71.0s. 37 are new: lib/diagnostics/client-failure.test.ts (21), app/api/v1/diagnostics/client-failure/handler.test.ts (8), lib/diagnostics/refusal-log.test.ts (8)... counted precisely: 32 across those three files plus 6 in app/error-boundaries.test.tsx, 38 in total, and the suite moved from 1735 to 1772 because one pre-existing file is unchanged in count.\n\nWHAT THE REPORTER'S TESTS PIN, and the first two are the security properties:\n  - NO MESSAGE AND NO STACK CAN TRAVEL. An error whose message is \"postgres://user:pw@host/db\" produces a report whose serialisation contains neither \"postgres\" nor \"pw@host\", and whose key set is exactly boundary/digest/errorName/hadMessage/pathname.\n  - THE QUERY IS DROPPED, NOT TRUNCATED: /search?q=secret+thing becomes /search, and /browse?kind=series&genre=Drama becomes /browse. A diagnostic has no business recording what a viewer typed. The fragment goes too.\n  - A digest that is not a digest is refused rather than laundered: \"../../etc/passwd\", an uppercased digest, a hyphenated one, an empty one and an over-long one all become null. Same for an error name that is not an identifier.\n  - TOTALITY, because this is called from the last-resort boundary and JavaScript can throw anything: null, undefined, a string, a number, a Symbol and an array all produce a valid report, and an object whose `digest` getter THROWS does not propagate.\n  - The server re-sanitises rather than trusting a body because it shares its origin: a POST claiming digest \"NOT A DIGEST\", a query-bearing pathname and hadMessage \"yes\" is normalised to null/stripped/false, and extra `stack` and `message` fields are dropped rather than logged.\n\nTHE ROUTE'S TESTS pin the bound, the budget and the silence: an oversized body is refused 413 BEFORE anything parses it (request.text() then measure, because request.json() on an unmeasured body parses whatever arrived); a non-report is 400 and logs nothing; the FIRST reports in a window are kept and the rest dropped, because the tenth copy of a failure says nothing the first did not; a dropped report still answers 204 so the wire says nothing about the budget; and the count of dropped reports is stated once when the next window opens and not again.\n\nTHE REFUSAL LOG'S TESTS pin that no header VALUE is recorded, that the query is stripped from the path, that an unusual method is normalised to OTHER rather than echoed, and that the token-present/absent pair -- the distinction that made PL-0753 diagnosable only from an operator's screenshot -- is what the line carries.\n\nTHE BOUNDARY TESTS CARRY A PREMISE FOR ANOTHER WORKSPACE'S CHECK, and that is the interesting one. PL-0755's smoke test now requires AppShell's markers in the homepage and refuses the error headline. That assertion is only worth anything while the error page is distinguishable from a working one -- a fact about global-error.tsx, which that script cannot import because it runs against a packaged tree with no TypeScript. So app/error-boundaries.test.tsx asserts global-error carries the headline and NONE of skip-link, class=\"shell\" or id=\"main\". MUTANT RUN: adding a skip link and id=\"main\" to global-error fails that test with 'global-error must not emit skip-link; the smoke test depends on it'. Reverted; 6/6 green.\n\nTWO TESTS WERE WRITTEN, FAILED, AND REMOVED RATHER THAN PROPPED UP. error.tsx renders AppShell, which contains next/link; rendering a \"use client\" component through renderToStaticMarkup puts that Link in a client tree with no app-router context and React fails with \"invariant expected app router to be mounted\". profile-ui.test.tsx renders the same AppShell successfully because it renders it from a SERVER tree. apps/web/vitest.config.ts is environment: \"node\" with no jsdom and no router mock, so there is nowhere to mount one. Adding a mock would have made this file the only place in the suite that fakes Next's internals. The reason is written in the file where the tests were. What covers that boundary instead: the shared reporter it calls, tested directly; its digest line, unchanged since PW-0301; and Playwright, which this session cannot execute.\n\nNOT CLAIMED: that the installed application now starts. It is not diagnosed. What this earns is that the next MSI run writes what failed into %LOCALAPPDATA%\\app.projectliberty.desktop\\logs\\sidecar.log -- a liberty-client-failure line with the boundary, the route and the digest, and a liberty-request-refused line for any refusal -- in the file the operator already pastes. The operator validation procedure is in the apply script."
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac, SECOND IMPLEMENTATION ROUND (ai:start from REVIEW preserved implementationBaseSha f02703e88c8b). npx vitest run --root apps/web src/lib/diagnostics/client-failure.test.ts: 40 tests (was 16). src/app/error-boundaries.test.tsx: 8 (was 6). src/components/state/reachability-store.test.ts: 14 (was 12). Whole suite: 127 files, 2548 tests, all passing. tsc clean; eslint 0 errors.\n\nFOUR CANDIDATE CAUSES WERE REFUTED BY MEASUREMENT BEFORE A LINE WAS WRITTEN, and recording that is the point: three previous rounds were spent on readings that a measurement would have ended. The packaged artifact was relocated to /tmp, booted with a valid sidecar token, and its homepage loaded in Chromium 1194 via Playwright with extraHTTPHeaders carrying the token. Four runs, each with one init script evaluated before any page script: Intl.Segmenter deleted; Intl.Segmenter throwing on construction; Object.hasOwn deleted; structuredClone deleted. In ALL FOUR the homepage still rendered the application (class=\"shell\" present, error headline absent, zero diagnostics POSTs). So every candidate from the Wave 131 source audit is refuted.\n\nTHE ESCALATION HYPOTHESIS WAS ALSO REFUTED. error.tsx renders AppShell, so a throw inside AppShell was expected to re-throw while rendering the fallback and escalate to global-error -- which would have explained the operator's boundary while the cause sat inside the shell. Measured with a throwing navigator.onLine getter (app code, reached only from inside AppShell): the report came back boundary \"route-error\" and the fallback rendered. So the operator's \"global-error\" means the failure really is AT OR ABOVE THE ROOT LAYOUT, which narrows the suspect surface to layout.tsx, its single client leaf FocusOnRouteChange, and Next's own root client runtime.\n\nWHAT THE NEW TESTS PIN. (1) shape CLASSIFIES WITHOUT RECORDING: five defects that hadMessage:true could not separate, each asserted, plus the SAME defect under Chromium's, Firefox's and WebKit's different wordings classifying identically -- an operator should not need to know which engine wrote the line. unclassified is a first-class answer and is asserted for React's minified message. A 2048-char bound is enforced inside the classifier, not only at the caller, because a regex over an attacker-sized string is the denial of service this module exists not to be. (2) frames CANNOT CARRY A PATH. Asserted over six real hostile frame shapes -- a file:///D:/a/project-liberty build path, an absolute source path, a chrome-extension URL, a webpack-internal URL, an api URL with a token in its query, and a lookalike /_next/statics/ host -- all yield zero frames, because none contains /_next/static/. For a frame that IS kept, the serialisation is asserted to contain no host, no port, no scheme, no slash and not the function name. (3) THE FIXTURE IS A REAL CHROMIUM STACK from the real packaged build, captured in the run above, not a plausible-looking invention. (4) FOUR SEPARATE try BLOCKS, ONE PER READ: a throwing digest getter must not also cost name, message and stack, and with one try around all four it would. Asserted. (5) THE SERVER REBUILDS FRAMES rather than filtering them, so an injected extra property on a submitted frame cannot survive; a shape it does not name becomes unclassified, asserted not to let chosen text reach the log line. (6) formatClientFailureReference carries exactly what the log line carries: asserted to contain \"digest ab12\" and none of postgres, pw@host, the query the viewer typed, the host or the scheme.\n\nVERIFIED END TO END ON THE REBUILT ARTIFACT, which is the part that makes this actionable rather than plausible. The artifact was rebuilt and driven again with a property read off undefined injected inside the application shell. Report: shape \"undefined_property_read\", first frame 0pokk16szkx7d.js:1:72055. Resolving column 72055 of that shipped chunk by hand lands on\n\n    navigator.onLine?f():h({kind:\"browser-offline\"})\n\nwhich is the expression the throw was injected into. The diagnostic resolves to source, demonstrated.\n\nA SECOND DEFECT THE MEASUREMENT FOUND: 52 POSTS FOR ONE FAILURE. React retries the boundary and each retry re-runs the reporting effect. The server-side budget this task shipped in 131A exists and could not help -- by the time it runs the request has already been made, so it bounds the LOG LINES and not the transport. The reporter now has a per-document budget of 4 and drops identical reports before spending any of it. Re-measured on the identical scenario against the rebuilt artifact: 1 POST. Before 52, after 1.\n\nMUTANT RUN on the hardening: restoring the bare navigator.onLine in observeBrowser fails \"mounts, rather than throwing, when the getter throws\" by name; reverted, 14/14 green.\n\nTWO HARDENINGS, FILED AS HARDENING AND NOT AS THE FIX, because the measurement above refutes that reading: observeBrowser called a bare navigator.onLine forty lines below the guarded browserOnLine() it should have used, and network-state.ts used Object.hasOwn where Object.prototype.hasOwnProperty.call is exactly as correct and strictly more portable.\n\nNOT CLAIMED: that the installed application now starts. It is not diagnosed. What this earns is that the next MSI run names the chunk and the column, and that position resolves to an expression in the identical build.\n\nsecurity-review IS NOW A REQUIRED GATE ON THIS TASK and is deliberately NOT recorded here. This round added two fields that cross a boundary this task's own acceptance had closed, and an implementer who can record their own judgement gate can close their own security question."
         }
       }
     },
@@ -15381,22 +15386,22 @@
       "notes": "FILED 2026-10-11 as Lane B of the commander's round-130 accelerated sprint. Reconnaissance over the PW-03xx series found every approved screen DONE except live TV, the licences page and a dialog-focus task -- and found no task at all for the catalog surface the product spec names, which is why this exists rather than being claimed. The stale productUi instrument in control/product-readiness.json (settings and player-controls recorded absent while both are built) is reported to the commander rather than edited from here.",
       "owner": "claude-frontend",
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-11T17:40:38.518Z",
+      "updatedAt": "2026-10-12T14:33:30.117Z",
       "implementationBaseSha": "b0f22cf69537531c2aca968ce1ecfef57f3aebc3",
       "gateResults": {
         "typecheck": {
           "status": "pass",
-          "at": "2026-10-11T17:40:37.869Z",
+          "at": "2026-10-12T14:32:39.709Z",
           "by": "claude-frontend",
-          "commitSha": "8b80c2d2cb183a7374d319d66f17819cf6e99e8b",
-          "evidence": "TYPECHECK, at 8b80c2d2cb183a7374d319d66f17819cf6e99e8b. This gate replaces the one recorded earlier for the /browse work alone; the task was reopened from REVIEW with ai:start, which preserves implementationBaseSha, because Wave 131B's Workstream B asks for the existing browse work to be EXTENDED rather than rebuilt and that is this task continuing.\n\nnpm run typecheck (turbo, whole repository): 22 tasks successful, 22 total. npx eslint . --ignore-pattern \"dist/**\" in apps/web: 0 errors, 2 warnings, both pre-existing in files this change does not touch. npm run repo:validate passed. npm run ai:validate: 161 tasks, 9 agents.\n\nAND THE ROUTES COMPILE AS ROUTES, which a typecheck cannot establish. npm run build:desktop -w @liberty/web lists /browse, /movies and /tv in its route table, all three dynamic -- which is what `export const revalidate = 0` asks for and what a page whose filters live in the URL requires. A prerendered /movies would serve one genre's films at every other genre's address."
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 pre-existing warnings. npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. npm run build:desktop -w @liberty/web built; apps/desktop/scripts/package-sidecar.mjs laid out the packaged tree; packaged-server-smoke.mjs passed 7 checks against the relocated artifact (16 external specifiers across 159 chunks all resolvable, no symlinks). Recorded in a SECOND implementation round: this task was returned from REVIEW to IN_PROGRESS by ai:start, which preserves implementationBaseSha b0f22cf69537, because Wave 132 extended the same surface rather than opening a new one."
         },
         "unit": {
           "status": "pass",
-          "at": "2026-10-11T17:40:38.211Z",
+          "at": "2026-10-12T14:32:40.055Z",
           "by": "claude-frontend",
-          "commitSha": "8b80c2d2cb183a7374d319d66f17819cf6e99e8b",
-          "evidence": "UNIT, at 8b80c2d2cb183a7374d319d66f17819cf6e99e8b. This gate replaces the earlier one.\n\nnpx vitest run --root apps/web: 102 files, 1823 tests, all passing. The suite moved from 1772 to 1823; 51 of those are this task's, 36 from the original /browse work and 15 added now.\n\nWHAT THE NEW TESTS PIN:\n  - the route/kind pairing, asserted as a whole map rather than per entry, so a third locked route cannot be added without this test seeing it;\n  - THE PATH WINS OVER THE QUERY: readBrowseFilters({kind:\"series\"}, \"movie\") yields movie. `/movies?kind=series` is a stale link or somebody poking at the surface, and honouring it would serve series under a path and a heading that both say films;\n  - the genre is still read on a locked route, and `/browse` still chooses for itself;\n  - buildBrowseHref does NOT repeat a kind the route fixes (`/movies`, `/movies?genre=Drama`) but DOES emit one the route does not fix (`/movies?kind=series`) -- two sources of truth for one filter is a shareable link that can contradict its own path;\n  - a locked route's own address round-trips back to the same filters;\n  - the filter bar OMITS the kind control on a locked route rather than disabling it, asserted on both `id=\"browse-kind\"` and `name=\"kind\"` so a hidden input cannot creep back in;\n  - the form submits to the route it is rendered on, so filtering on /movies does not bounce the viewer to /browse;\n  - a selected genre the facets no longer offer is still shown and marked \"no titles\" -- it happens on exactly the page where it matters, the empty state, whose facet list cannot contain the genre that matched nothing;\n  - activeEntryId marks /movies and /tv as themselves and not as browse, because a viewer on /movies is not \"in Browse\".\n\nTHE EXISTING NAV GUARD DID THE REST FOR FREE, and that is worth recording as a return on PL-0756's earlier work: shell-usage.test.ts's \"links only to routes that actually exist\" resolved both new entries to real page.tsx files without being told about them, and its \"every page-like file renders <AppShell>\" rule is what kept the shell in the three pages instead of behind the shared component.\n\nRUNTIME, FROM THE REAL PACKAGED PRODUCTION ARTIFACT, because component tests in this suite see only the server-rendered first paint. The desktop target was rebuilt, the sidecar packaged, and the packaged server probed with the token header and a matching Host:\n\n  /                                      200, 15839 bytes, carries skip-link, class=\"shell\", and nav entries Movies, TV Shows, Browse\n  /browse                                200, 13658 bytes\n  /movies                                200, 13654 bytes, heading \"Films\"\n  /tv                                    200, 13650 bytes, heading \"Series\"\n  /movies?kind=series                    200, 13708 bytes, still \"Films\" and not \"Series\"\n  /tv?genre=<script>x</script> (encoded) 200, 13783 bytes, no unescaped script tag in the body\n  /movies with no token                  403\n\nNone of those bodies contains \"could not start this page\".\n\nONE HONEST CORRECTION TO MY OWN PROBE, recorded because it is the kind of thing that otherwise reads as a pass. My first run asserted the filter controls were present on all three pages and reported three failures. The controls were correctly ABSENT: this artifact has no catalogue metadata source, so loadBrowseCatalog returns the error state and the surface renders the unavailable panel instead of the filter bar -- which is the documented behaviour (\"the filter bar is rendered in every state except the failure one, where there are no facets to offer\"). The probe's expectations were wrong, not the code, and the corrected run asserts the heading plus catalog_source_not_configured plus the shell. The populated and filtered states remain covered by the unit tests in a classified process, as before: NODE_ENV is inlined at build time so a production artifact cannot be made to reach them.\n\nNOT CLAIMED: e2e coverage. Playwright cannot be executed in this session. /browse still has no e2e spec and now neither do /movies or /tv; e2e/tests/keyboard-reachability.spec.ts enumerates its routes by hand and does not derive them from PRIMARY_NAVIGATION, so the three are not automatically covered there either. That is named in the report as the next task on this lane rather than left to be discovered."
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac, SECOND IMPLEMENTATION ROUND. npx vitest run --root apps/web src/app/browse/browse.test.ts src/components/browse/browse-filters.test.tsx src/components/shell/shell-usage.test.ts and their consumers: 6 files, 203 tests (was 104 before this wave). Whole suite: 127 files, 2548 tests, all passing. tsc clean, eslint 0 errors.\n\nWHAT WAVE 132 ADDED TO THE SURFACE 131B SHIPPED, and it is an extension rather than a rebuild -- browseCatalog, the facet counting, the rights gate ordering and the deterministic sort tail are all unchanged and still have their original tests.\n\n(1) SORTING. BrowseSortKey (newest, oldest, title, title-desc) with SORT_COMPARATORS that are each TOTAL and share one title-then-id tail. Rotation invariance is asserted per comparator: the same items in a different incoming order produce the same output order, which a partial comparator does not give you. Code point only -- no localeCompare anywhere, because a locale-dependent comparison makes the order a property of the machine rather than of the data.\n\n(2) GENRE FILTERING rides the facet counts that were already computed after the gates, so a filter cannot surface an item the rights gate excluded and cannot show a count the gate did not produce.\n\n(3) buildBrowseHref OMITS THE DEFAULT ORDER, so a shared URL carries no redundant state, and the round trip (href -> readBrowseFilters -> href) is asserted over ALL 108 combinations across /browse, /movies and /tv.\n\n(4) shell-usage.test.ts now RESOLVES DYNAMIC SEGMENTS, so /title/[titleId] counts as existing; its rule that every live nav href must resolve to a real page.tsx keeps meaning what it says, and the non-vacuity assertion added in 130B is still there.\n\nA PROBE EXPECTATION OF MINE WAS WRONG IN 131B AND IS RECORDED HERE AGAIN because it is the kind of thing that turns into a false bug report: I first asserted the filter controls were present on /browse, /movies and /tv and reported three failures. The controls were correctly ABSENT -- with no catalogue source the surface renders the unavailable panel. My expectations were wrong, not the code.\n\nNEW INFORMATION FOR THIS TASK'S REVIEWER, MEASURED THIS WAVE. The reason these surfaces render the unavailable panel on the installed build is now established by driving the packaged artifact in a browser: its stdout says \"catalog metadata source: none requested (set LIBERTY_CATALOG_SOURCE_ID to configure one)\" and GET /api/v1/profiles answers 503 storage_not_configured because DATABASE_URL is unset. Neither variable is set anywhere in apps/desktop. That is filed as PL-0766 and is an architecture decision, not a defect in this task -- but it means the browse surface cannot be qualified against real data on the installed product until PL-0766 is decided."
         }
       }
     },
@@ -15437,6 +15442,377 @@
           "evidence": "REPO-VALIDATE, at fc350121c8292b4a60272bfc6628cf30ff5ad92a.\n\nnpm run repo:validate passed. node scripts/product-readiness.mjs regenerated coordination/PRODUCT_READINESS.md from the corrected JSON rather than the markdown being hand-edited -- its own header forbids editing it, and a generated view that disagrees with its source is the defect this instrument exists to prevent.\n\nEVERY CORRECTION WAS CHECKED AGAINST THE REPOSITORY BEFORE IT WAS WRITTEN, and the checks are the evidence:\n  - player-controls: apps/web/src/components/player/controls/ holds player-controls.tsx, controls-state.ts, their tests and a stylesheet; grep over the first two finds Fullscreen, volume, Mute, subtitle/Subtitles, audioTrack, selectAudioTrack and seek. e2e/tests/player-controls.spec.ts has 12 tests. grep for selectVariantTrack, qualitySelect and selectQuality across apps/web/src returns NOTHING, which is why the row is partial and not present.\n  - settings: apps/web/src/app/settings/page.tsx exists and renders Language, Diagnostics and About sections; apps/web/src/app/api/v1/profiles/preferences/ holds route.ts, handler.ts, contract.ts and handler.test.ts. \"No screen and no API\" was false on both halves.\n  - live-guide-ui: navigation.ts line 79 is planned(\"live\", \"Live TV\", \"live acquisition is PL-0602, blocked on licensed feed access\") -- a non-link with a stated reason, not a fragment anchor. There is no apps/web/src/app/live and no apps/web/src/components/live, so the state stays absent and only the reason changed.\n\nTHE NUMBERS MOVED AND NO WORK WAS DONE, which is the thing to be explicit about: UI / product polish 63% -> 69%, overall usable-product readiness 60% -> 61%, and the productUi row counts 7 present / 6 partial / 3 absent -> 7 present / 8 partial / 1 absent. That is the instrument catching up with the repository, not progress. Two of the three rows are the \"CORRECTED AND CHANGED\" case rounds 107's own notes distinguish -- the work had landed and the row was never updated -- and the new notes say so in those words.\n\nNOTHING WAS ROUNDED UP TO present. Both corrected rows carry a named missing clause: quality selection for the player, and playback/subtitle preferences plus PL-0744 and PW-0314 for settings. A green row is the one nobody re-checks, so partial with the gap named in the row is the honest state.\n\nNOT CLAIMED: that the remaining rows are right. I verified the three I changed plus the two I extended. The other eleven productUi rows and the six other dimensions were not audited, and rounds 107 and 130 between them have now found five stale rows in this one dimension -- which is a standing argument for an audit task rather than a reason to trust the rest.\n\nRE-RECORDED AFTER A RE-SEQUENCE, AND NOTHING ABOUT THE WORK CHANGED. Round 130A's own fix had to be corrected (the link rule refused Windows' hoisting), and the correction belongs BENEATH this commit rather than on top of it, so the commander can apply a minimal corrective bundle before the lane work. These commits were therefore replayed onto the corrected head, which gives them new ids: d8a28b28c3480b919b0226595d0186c5f725a6f9 became fc350121c8292b4a60272bfc6628cf30ff5ad92a. git diff d8a28b2 fc35012 over this task's files is EMPTY, so the evidence above describes the same bytes; only the commit it is attached to moved. The earlier gate named a sha that is no longer an ancestor of HEAD, which is why this is re-recorded rather than left to be read as provenance.\n\nRE-RECORDED AGAIN AFTER A SECOND RE-SEQUENCE, AND AGAIN NOTHING ABOUT THE WORK CHANGED. Round 130A2's fix failed the Windows job on a platform-dependent assertion in its own regression suite, so the 130A3 correction had to land BENEATH this commit for the same reason as last time -- the commander applies a minimal corrective bundle before the lane work. These commits were replayed onto the corrected head and have new ids; git diff between the old and new commits over this task's files is EMPTY. Only the commit this evidence is attached to moved."
         }
       }
+    },
+    {
+      "dependencies": [],
+      "reviewDependencies": [
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/components/shell/app-shell.tsx",
+        "apps/web/src/components/catalog-rail.tsx",
+        "apps/web/src/components/continue-watching"
+      ],
+      "reviewAgent": "gpt-architect",
+      "status": "REVIEW",
+      "notes": "FILED 2026-10-12 as part of Wave 132. Surface narrowed before claim: the declaration originally named components/state, components/catalog-card.tsx, components/catalog-rail.tsx and components/continue-watching, and the implementation changed none of them -- it consumes them. components/state additionally overlapped PL-0759, whose surface grew to cover the reachability store. A declaration wider than the work is a reservation against other lanes for nothing, which is what blocked this claim.",
+      "id": "PL-0760",
+      "priority": "P1",
+      "lane": "Frontend",
+      "preferredAgent": "claude-frontend",
+      "title": "The home hero is a hard-coded sentence, so the first screen cannot say what this installation actually has",
+      "allowedPaths": [
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/components/home",
+        "apps/web/src/app/globals.css"
+      ],
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "THE DEFECT. The home hero was a fixed marketing sentence and a single generic error line. On the installed Windows build -- which has no catalog metadata source -- that produced a first screen which stated a promise and could not state a fact, and an error state which could not distinguish \"no source is configured\" from \"the source failed\" from \"the source returned nothing\". A first screen that cannot describe the installation is the same defect class this project keeps finding: a shape standing in for a presence.\n\nREQUIRED: THE HERO IS LOADER-DRIVEN AND TOTAL. Every reachable catalog state -- populated, each distinct empty cause, each distinct error reason -- renders a hero, and exactly one h1 in every one of them. Selection must be deterministic with explicit tie-breaks and must not use localeCompare, which is locale-dependent and therefore not an order.\n\nREQUIRED: THE ERROR COPY NAMES THE REASON. One panel per reason the loader can actually return, so the operator reads a cause rather than \"something went wrong\". A reason the loader cannot return must not have a panel, and a reason it can return must not be missing one -- the test is a table over the loader's own union, so adding a reason without copy fails a test that names the dependency.\n\nREQUIRED: RAIL KEYBOARD TRAVERSAL IS TESTABLE. apps/web/vitest.config.ts is environment: \"node\" with no jsdom and no app-router context, so a client component that renders next/link cannot be rendered in a test. The traversal logic therefore lives in a plain module and is tested directly; the client component is a thin consumer asserted by source rules. Do not add jsdom and do not mock Next internals to get around this.\n\nREQUIRED: NO INVENTED AVAILABILITY. A \"Recently Added\" rail may only exist if the catalog contract carries a field that supports recency. It does not -- CatalogItem carries releaseYear and no ingestion date -- so no such rail may be added and no copy may call anything new or recent.\n\nMUST NOT: redesign the approved interface, hand-roll the shell chrome in a route, or remove a page's own <AppShell> (shell-usage.test.ts enforces that each page-like file carries it, and that rule must keep meaning what it says).\n\nMUST NOT: throw at module-evaluation time, or touch a non-universal browser API without a typeof guard. The installed WebView2 build is currently failing on a client TypeError and a new unguarded global would be indistinguishable from it.",
+      "owner": "claude-frontend",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-12T14:33:30.826Z",
+      "implementationBaseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+        "reconciledAt": "2026-10-12T14:30:16.915Z",
+        "reconciledBy": "claude-frontend",
+        "implementationAgent": "claude-frontend",
+        "headAtReconciliation": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "44e224b3364b6c68e29547463f4421819d5127fc",
+        "newestSurfaceCommit": "44e224b3364b6c68e29547463f4421819d5127fc",
+        "surfaceCommits": [
+          "44e224b3364b6c68e29547463f4421819d5127fc"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 11,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "Wave 132 ran nine workstreams in parallel from this commit; all five implementations were written, tested and committed before any of these tasks was filed, because the tasks were derived from the finished disjoint surfaces rather than the reverse. 62c88fa is the branch tip at which every worker started and the last commit before any Wave 132 code exists."
+      },
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-12T14:30:39.936Z",
+          "by": "claude-frontend",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0, no diagnostics. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 warnings, both pre-existing in files this change does not touch (api/v1/profiles/preferences/handler.test.ts, lib/db/in-memory-repository.test.ts). npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. AND IT COMPILES AS A BUILD, NOT ONLY AS TYPES: npm run build:desktop -w @liberty/web completed and apps/desktop/scripts/package-sidecar.mjs laid out the packaged tree from it, which is the check that matters for a route that type-checks but does not register."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-12T14:30:40.251Z",
+          "by": "claude-frontend",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx vitest run --root apps/web: 127 files, 2548 tests, all passing. The suite moved from 100 files / 1772 tests at the 131B tip to 127 / 2548 across Wave 132; this task contributes 59 in src/components/home (spotlight.test.ts, rail-navigation.test.ts, home-ui.test.tsx). WHAT THE TESTS PIN. (1) EXACTLY ONE h1 IN EVERY REACHABLE STATE -- populated, each empty cause and each error reason -- because the defect being removed is a first screen that could not describe the installation, and a state with no heading or two headings is that defect in a different shape. (2) THE ERROR COPY IS A TABLE OVER THE LOADER'S OWN UNION, so a reason the loader can return and the panel table cannot name fails a test that says which dependency moved; the loader currently publishes three reasons and there are four panels including the fallback. (3) SPOTLIGHT SELECTION IS DETERMINISTIC with an explicit tie-break chain (releaseYear desc, title by code point, id) and no localeCompare anywhere -- a rotation-invariance test asserts the same winner from a rotated input list. (4) THE SKELETON RESERVES HOME_RAIL_KINDS.length RAILS, not one, which was a visible layout shift. NOT DONE AND NOT DEFERRED: no Recently Added rail. packages/contracts/src/domains/catalog.ts carries releaseYear and no ingestion date, and lib/catalog-source.ts states that a record here carries no age, so the field that rail would need does not exist; no rail was added and no copy calls anything new or recent. UNVERIFIED HERE: the responsive steps and the rail hover are CSS with no renderer in this environment to measure them, and the client RailStack's DOM behaviour is asserted by source rules rather than by rendering, because apps/web/vitest.config.ts is environment node with no jsdom and no app-router context."
+        }
+      }
+    },
+    {
+      "dependencies": [],
+      "reviewDependencies": [
+        "packages/contracts/src/domains/search.ts",
+        "apps/web/src/app/browse/browse.ts"
+      ],
+      "reviewAgent": "gpt-architect",
+      "status": "REVIEW",
+      "notes": "FILED 2026-10-12 as part of Wave 132.",
+      "id": "PL-0761",
+      "priority": "P1",
+      "lane": "Frontend",
+      "preferredAgent": "claude-frontend",
+      "title": "Search ranks by a four-value enum, so the result a viewer wanted can sort below one that merely contains the word",
+      "allowedPaths": [
+        "apps/web/src/app/search",
+        "apps/web/src/components/search",
+        "apps/web/src/lib/catalog.ts",
+        "apps/web/src/lib/catalog.test.ts"
+      ],
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "THE DEFECT. Search classified each hit into one of four kinds and sorted by that classification alone. Two hits with the same kind had no defined order between them beyond the list's incoming order, and a word-boundary match -- the single most common thing a person means when they type two letters -- was indistinguishable from a match buried inside a longer word.\n\nREQUIRED: A REAL RELEVANCE ORDER, COMPUTED LOCALLY AND DETERMINISTICALLY. Tiers from exact through prefix and word-prefix to substring, weighted by field with title ahead of the rest, and a total comparator whose tail is the catalog's existing deterministic order (releaseYear desc, then title by code point, then id). No localeCompare and no toLocaleLowerCase anywhere in an ordering path: a locale-dependent comparison makes the order a property of the machine.\n\nREQUIRED: THE SCORER CANNOT THROW AT EVALUATION TIME AND CANNOT BE BUILT FROM THE QUERY. A RegExp compiled from user input is an injection and a denial-of-service surface; a Unicode property escape that an older engine rejects at parse time takes the whole module down. Both are structurally excluded, and the fallback path is tested rather than assumed.\n\nREQUIRED: AN HONEST AVAILABILITY LINE. The surface may report only what the rights gate actually read off the item -- never \"available\" or \"playable\", which it has not established. The function that produces it is total and has an explicit refused branch.\n\nREQUIRED: MEASURED, NOT ASSERTED, DE-DUPLICATION. A request-scoped memo must be proven by counters that the test reads, not by a comment claiming a cache exists. It must single-flight on the promise, must cache a null result, and must never cache a rejection.\n\nMUST NOT: add a contract field that nothing can populate. Where the published match-kind enum is coarser than the internal order, report that as a contract change to be decided -- do not widen the enum silently.",
+      "owner": "claude-frontend",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-12T14:33:31.153Z",
+      "implementationBaseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+        "reconciledAt": "2026-10-12T14:30:17.304Z",
+        "reconciledBy": "claude-frontend",
+        "implementationAgent": "claude-frontend",
+        "headAtReconciliation": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "44e224b3364b6c68e29547463f4421819d5127fc",
+        "newestSurfaceCommit": "44e224b3364b6c68e29547463f4421819d5127fc",
+        "surfaceCommits": [
+          "44e224b3364b6c68e29547463f4421819d5127fc"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 8,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "Wave 132 ran nine workstreams in parallel from this commit; all five implementations were written, tested and committed before any of these tasks was filed, because the tasks were derived from the finished disjoint surfaces rather than the reverse. 62c88fa is the branch tip at which every worker started and the last commit before any Wave 132 code exists."
+      },
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:12.508Z",
+          "by": "claude-frontend",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 pre-existing warnings. npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. npm run build:desktop -w @liberty/web built and apps/desktop/scripts/package-sidecar.mjs laid the packaged tree out from it; apps/desktop/scripts/packaged-server-smoke.mjs then passed 7 checks against the relocated artifact, including 16 distinct non-builtin external specifiers across 159 chunks all resolvable and no symlink anywhere in the tree -- so this change did not disturb the packaging fixes of rounds 130 and 130A."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:12.827Z",
+          "by": "claude-frontend",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx vitest run --root apps/web: 127 files, 2548 tests, all passing. Targeted run over this task's surface plus its consumers: 13 files, 354 tests. src/app/search/relevance.test.ts is new with 24 cases; search.test.ts +6; lib/catalog.test.ts +10. WHAT THE TESTS PIN. (1) THE ORDER IS TOTAL AND LOCALE-INDEPENDENT. Every comparator is exercised for rotation invariance -- the same input in a different incoming order yields the same output order -- which is the property a classification-only sort did not have. No localeCompare and no toLocaleLowerCase on any ordering path; a source rule asserts their absence, because this is the kind of call that gets re-added by someone making alphabetisation look right on one machine. (2) THE SCORER CANNOT BE BUILT FROM THE QUERY. No RegExp is ever compiled from user input, which is both an injection and a denial-of-service surface; the one RegExp with a Unicode property escape is constructed inside a try with an ASCII fallback, and the FALLBACK PATH IS TESTED rather than assumed, because a property escape an older engine rejects throws at parse time and would take the module down at evaluation. (3) WORD BOUNDARIES ARE SURROGATE-PAIR SAFE: the boundary test reads the preceding CODE POINT, not the preceding UTF-16 unit. (4) THE MEMO IS MEASURED, NOT CLAIMED: createCatalogMemo exposes counters the test reads, single-flights on the promise rather than the result, caches a null answer and never caches a rejection. (5) describeSurfacedRightsBasis reports only what the gate read off item.rights and has an explicit refused branch; a test asserts it never emits the words available or playable, which it has not established. NOT PROVEN HERE: the JSX wiring of the rights line in browse-grid.tsx and search-results.tsx is not render-tested, because both render a use-client RovingGroup and a CatalogCard containing next/link, which cannot be rendered in environment node without an app-router context; and the request SCOPE of the memo is React's cache primitive, which this suite cannot mount. Both stated rather than counted as covered. NO FUZZY MATCHING, deliberately: every option needed either a dependency or an untunable threshold."
+        }
+      }
+    },
+    {
+      "dependencies": [],
+      "reviewDependencies": [
+        "packages/media-engine",
+        "apps/web/src/lib/continue-watching.ts",
+        "apps/web/src/lib/viewer-preferences.ts"
+      ],
+      "reviewAgent": "gpt-architect",
+      "status": "REVIEW",
+      "notes": "FILED 2026-10-12 as part of Wave 132.",
+      "id": "PL-0762",
+      "priority": "P1",
+      "lane": "Player",
+      "preferredAgent": "claude-media",
+      "title": "The player has no rate, no subtitle styling, no sync offset and no resume rule -- and no way to test one if it had",
+      "allowedPaths": [
+        "apps/web/src/components/player"
+      ],
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "THE SHAPE OF THIS TASK, STATED FIRST BECAUSE IT IS THE HONEST ONE. apps/web/vitest.config.ts is environment: \"node\": there is no DOM, no HTMLMediaElement and no app-router context, so no control can be verified by driving a real element here. Every item below is therefore delivered as a pure model over a narrow injected port plus an adapter, and the classification of what is actually proven is part of the deliverable.\n\nREQUIRED: PLAYBACK RATE AS A CLOSED SET, NOT A NUMBER. An arbitrary rate is a way to hand the element a value it will clamp silently. The allowed rates are enumerated, a requested rate is resolved to the nearest allowed one, stepping saturates rather than wrapping, and the adapter refuses an off-list rate rather than clamping it a second time. The element is the authority on the current rate: the adapter publishes what the element reports and publishes nothing for an unreadable reading rather than emitting NaN.\n\nREQUIRED: SUBTITLE STYLING THAT CANNOT CARRY CSS. A stored style is attacker-influenced data the moment it round-trips through a profile record. Styling is therefore tokens only, decode reports a named reason per rejected field, and a stored value such as a colour with a trailing declaration is REFUSED rather than sanitised -- sanitising is the weaker property, because it claims to have removed everything dangerous.\n\nREQUIRED: OFFSETS THAT DO NOT DRIFT. Subtitle and audio synchronisation offsets snap to integer steps so repeated nudges cannot accumulate float error, saturate at their bounds, and have a reset.\n\nREQUIRED: A RESUME RULE WITH AN ABSTENTION. Near the start and near the end both mean restart, not resume, and an unreadable position means the decision declines to supply one rather than supplying zero -- a resume decision that returns 0 is indistinguishable from \"start at the beginning\" and would silently discard a real position. Thresholds duplicated from the server module must be held to parity by a test that fails if either side moves.\n\nREQUIRED: CAPABILITY DETECTION THAT NEVER CLAIMS HARDWARE. The probe reports what the browser reported and names its source; \"unknown\" is a first-class answer. A method read off a capabilities object must be invoked on its owner, or it throws.\n\nREQUIRED: A DECLARATIVE KEYMAP. A key event resolves to a named command in a tested module and the component dispatches; no key reaches a seek fraction of 100%; a focused text input keeps its keys.\n\nMUST NOT: promote an experimental native player, or presume the unresolved native-hosting decision. MUST NOT ship a control that moves and changes nothing -- a slider with no actuation is worse than its absence, because it reports a capability the product does not have. State plainly which items are models with no UI.",
+      "owner": "claude-media",
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-10-12T14:33:31.507Z",
+      "implementationBaseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+        "reconciledAt": "2026-10-12T14:30:17.639Z",
+        "reconciledBy": "claude-media",
+        "implementationAgent": "claude-media",
+        "headAtReconciliation": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b",
+        "newestSurfaceCommit": "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b",
+        "surfaceCommits": [
+          "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 19,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "Wave 132 ran nine workstreams in parallel from this commit; all five implementations were written, tested and committed before any of these tasks was filed, because the tasks were derived from the finished disjoint surfaces rather than the reverse. 62c88fa is the branch tip at which every worker started and the last commit before any Wave 132 code exists."
+      },
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:13.140Z",
+          "by": "claude-media",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 pre-existing warnings. npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. npm run build:desktop -w @liberty/web built and apps/desktop/scripts/package-sidecar.mjs laid the packaged tree out from it; apps/desktop/scripts/packaged-server-smoke.mjs then passed 7 checks against the relocated artifact, including 16 distinct non-builtin external specifiers across 159 chunks all resolvable and no symlink anywhere in the tree -- so this change did not disturb the packaging fixes of rounds 130 and 130A."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:13.444Z",
+          "by": "claude-media",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx vitest run --root apps/web src/components/player: 28 files, 636 tests passing. npx vitest run --root packages/media-engine: 13 files, 373 passing, 1 skipped (unchanged by this task). Whole suite: 127 files, 2548 tests. New: playback-rate 51, subtitle-style 26, timing-offset 41, resume-decision 35, decode-capability 37. WHAT IS ACTUALLY PROVEN, AND THE HONEST ANSWER IS NOT 'the controls work'. This suite is environment node: no DOM, no HTMLMediaElement. Every item is a pure model over an injected port plus an adapter, and what the tests pin are the properties that survive that: a rate off the allowed list is REFUSED by the adapter rather than clamped twice (a second clamp hides a caller bug); the element remains the authority on the current rate and an unreadable reading publishes nothing rather than emitting NaN; a stored subtitle style carrying a CSS declaration is refused rather than sanitised, and Object.hasOwn blocks __proto__ in the decoder; offsets snap to integer steps so repeated nudges cannot accumulate float error; resume has a third outcome, ignore, which yields startAtSeconds null -- returning 0 there is indistinguishable from start-at-the-beginning and would silently discard a real stored position; resume thresholds are mirrored rather than imported (importing lib/continue-watching.ts would pull @liberty/catalog-ingestion into the client bundle) and a parity test fails if either side moves; decodingInfo is bound to its owner, because a detached host method throws an illegal invocation. FIXED IN PASSING, AND IT IS THE CLASS UNDER INVESTIGATION THIS ROUND: player-controls.tsx probed window.matchMedia and then called addEventListener on the QUERY OBJECT unguarded. That throw happens inside useSyncExternalStore's subscribe, which takes the whole surface down. Now probed on the object it is called on, with an addListener fallback and a catch. CLASSIFICATION, strictly: nothing here is (a) functional-and-tested, because no real media element is observable in this environment. Rate end-to-end through the adapter, the keymap and dispatch, decode detection and the resume decision are (b) implemented and unit-tested. SUBTITLE STYLING AND BOTH SYNC OFFSETS SHIPPED AS MODELS WITH NO UI, deliberately: re-timing cues is not implemented and HTMLMediaElement has no audio-delay API at all, so a slider would report a capability the product does not have. ITEM 5 WAS ALREADY DONE: playback-machine.ts already has an 11-phase chart with buffering and recovering, a bounded retry budget and a reason trail; a second machine would have been duplication. FINDING, reported not fixed: resolveTracks has no production caller -- only its own test -- so automatic track resolution is dead code and only manual menu selection reaches the adapter. D1 untouched; no experimental player promoted."
+        }
+      }
+    },
+    {
+      "dependencies": [],
+      "reviewDependencies": [
+        "docs/CONTENT_RIGHTS.md",
+        "apps/web/src/lib/authorization",
+        "apps/web/src/components/shell/navigation.ts"
+      ],
+      "reviewAgent": "gpt-architect",
+      "status": "REVIEW",
+      "notes": "FILED 2026-10-12 as part of Wave 132.",
+      "id": "PL-0763",
+      "priority": "P2",
+      "lane": "Live",
+      "preferredAgent": "claude-media",
+      "title": "Live TV is a nav entry with no destination, and no code that could read a playlist if a licensed feed arrived",
+      "allowedPaths": [
+        "apps/web/src/lib/livetv",
+        "apps/web/src/components/live",
+        "apps/web/src/app/live",
+        "media/fixtures/livetv"
+      ],
+      "qualityGates": [
+        "typecheck",
+        "unit",
+        "rights-review"
+      ],
+      "acceptance": "THE BOUNDARY THIS TASK IS WRITTEN AROUND. Live acquisition is blocked on licensed feed access and stays blocked. What is missing is not a channel source: it is the parsing, authorization, organisation and presentation layer that a licensed feed would feed, and the tests that would catch it being wrong. Building that layer must not create a path by which a synthetic fixture reaches a viewer looking like a channel.\n\nREQUIRED: BOTH PARSERS ARE HAND-WRITTEN AND TOTAL. No parsing dependency is added. The M3U reader returns per-line diagnostics instead of throwing, and handles the real malformations: quoted attributes with escaped quotes, a BOM, CRLF, a missing trailing newline, an entry with no URL, an attribute with no value, duplicates. It never follows a URL. The XMLTV reader REFUSES a DOCTYPE or entity declaration outright rather than attempting to parse it safely -- that is the XXE class, and refusal is the only property worth asserting -- and is bounded in input size.\n\nREQUIRED: TIME ZONES ARE DATA, NOT AN ASSUMPTION. A timestamp's offset is parsed from the feed, instants are stored in UTC, and rendering takes the zone from the caller. Offsets that are not whole hours, a programme crossing midnight and a programme crossing a DST boundary are each tested.\n\nREQUIRED: NOW AND NEXT COME FROM AN INJECTED CLOCK. Logic that reads Date.now() internally cannot be tested at a boundary, and the gap case -- nothing scheduled -- must be a named state rather than an empty object.\n\nREQUIRED: THE RIGHTS GATE IS ON THE PATH, NOT BESIDE IT. Every channel reaches the surface through the existing authorization, each rejection carries a named reason, and a channel whose origin is not held is dropped rather than shown with a warning.\n\nREQUIRED: THE SHIPPED CONFIGURATION TELLS THE TRUTH. With no licensed feed registered, /live states that no feed is configured. A test must scan the surface's own modules and FAIL if any of them names the fixtures directory, a fixture filename, or calls the feed registrar -- because the tempting move, with a finished parser and no feed, is exactly to register the fixtures so the screen has something on it.\n\nREQUIRED: ERROR REPORTING THAT LEAKS NOTHING. A stream failure is reported as a named class, with no URL and no credential in the message.\n\nMUST NOT: bundle a channel list, hard-code a third-party credential, make a network call, or weaken the gate. Fixtures must be obviously synthetic so that no reader can mistake one for a shipped channel.",
+      "owner": "claude-media",
+      "implementationAgent": "claude-media",
+      "updatedAt": "2026-10-12T14:33:31.847Z",
+      "implementationBaseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+        "reconciledAt": "2026-10-12T14:30:17.972Z",
+        "reconciledBy": "claude-media",
+        "implementationAgent": "claude-media",
+        "headAtReconciliation": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "5bb8e8b9126813ec155268e78c8b20df3db850da",
+        "newestSurfaceCommit": "5bb8e8b9126813ec155268e78c8b20df3db850da",
+        "surfaceCommits": [
+          "5bb8e8b9126813ec155268e78c8b20df3db850da"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 33,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "Wave 132 ran nine workstreams in parallel from this commit; all five implementations were written, tested and committed before any of these tasks was filed, because the tasks were derived from the finished disjoint surfaces rather than the reverse. 62c88fa is the branch tip at which every worker started and the last commit before any Wave 132 code exists."
+      },
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:49.177Z",
+          "by": "claude-media",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 pre-existing warnings. npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. npm run build:desktop -w @liberty/web built and apps/desktop/scripts/package-sidecar.mjs laid the packaged tree out from it; apps/desktop/scripts/packaged-server-smoke.mjs then passed 7 checks against the relocated artifact, including 16 distinct non-builtin external specifiers across 159 chunks all resolvable and no symlink anywhere in the tree -- so this change did not disturb the packaging fixes of rounds 130 and 130A. Three eslint ERRORS in this task's own live-page-data.test.ts were found and fixed before this was recorded: a loop variable named module, which @next/next/no-assign-module-variable refuses. Renamed; the file's 18 tests still pass."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:49.534Z",
+          "by": "claude-media",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx vitest run --root apps/web over this task's 12 files: 214 tests passing (4.40s). Whole suite: 127 files, 2548 tests. shell-usage.test.ts re-run unmodified to confirm /live satisfies its page-exists rule: 16 passing. WHAT THE TESTS PIN, and the first one is the only one that matters for rights. (1) NO FIXTURE CAN REACH THE SURFACE. live-page-data.test.ts reads the SOURCE of live-page-data.ts, live-surface.tsx, app/live/page.tsx and feed-configuration.ts and fails if any of them names testing/fixtures, media/fixtures, any fixture filename, or calls registerLiveFeed. That rule exists because the tempting move with a finished parser and no feed is to register the synthetic fixtures as a development feed so the screen has something on it -- which is exactly how a synthetic channel list ends up in front of a viewer. Nothing in the repository calls registerLiveFeed, so /live renders: Live TV is not available on this installation -- no licensed live feed configured. (2) THE XMLTV READER REFUSES A DOCTYPE OR ENTITY DECLARATION OUTRIGHT rather than parsing it carefully; hostile-doctype-epg.xml is a committed fixture for it. Refusal is the only assertable property here -- a parser that claims to have handled entities safely is the XXE defect with a comment on it. (3) TIME ZONES ARE DATA: offsets parsed from the feed, instants stored UTC, rendering from a caller-supplied zone, with a +0530 and a -0330 case, a programme crossing midnight and one crossing a DST boundary. (4) NOW/NEXT TAKES AN INJECTED CLOCK and names six states including the gap where nothing is scheduled. (5) The M3U reader is total: BOM, CRLF, missing trailing newline, escaped quotes inside quoted attributes, an entry with no URL, an attribute with no value, duplicates -- each returns diagnostics rather than throwing, and the reader never follows a URL. (6) Stream errors are named classes with shape-based redaction, asserted to carry no URL and no credential. CLASSIFICATION. (a) functional and tested: the shipped unconfigured verdict, the rights gate admitPlaylistChannels and its refusal vocabulary, both parsers, zone handling, channel organisation, now/next, duplicate handling, cache policy, error redaction. (b) unit-tested only: the configured-feed path of the surface, which runs only when a feed is injected in a test. (c) nothing. (d) not done: live acquisition itself (PL-0602, unchanged), a durable favourites/EPG store, carrying the viewer's real zone on a server render (falls back to UTC unless ?tz= is given), and #EXTVLCOPT/#KODIPROP which are reported and ignored rather than honoured. NO REAL FEED IS CONFIGURED and this task does not configure one. rights-review is required and is NOT recorded here: it is gpt-architect's, and an implementer who could record it could complete their own rights decision."
+        }
+      }
+    },
+    {
+      "dependencies": [],
+      "reviewDependencies": [
+        "apps/web/src/lib/db",
+        "packages/contracts/src/domains/preferences.ts",
+        "apps/web/src/lib/continue-watching.ts"
+      ],
+      "reviewAgent": "gpt-architect",
+      "status": "REVIEW",
+      "notes": "FILED 2026-10-12 as part of Wave 132.",
+      "id": "PL-0764",
+      "priority": "P2",
+      "lane": "Frontend",
+      "preferredAgent": "claude-frontend",
+      "title": "Watchlist, history, resume and preferences are four unrelated reads, so switching profile switches some of them",
+      "allowedPaths": [
+        "apps/web/src/components/profiles/avatar.ts",
+        "apps/web/src/components/profiles/avatar.test.ts",
+        "apps/web/src/components/profiles/onboarding.ts",
+        "apps/web/src/components/profiles/onboarding.test.ts",
+        "apps/web/src/components/profiles/profile-library.ts",
+        "apps/web/src/components/profiles/profile-library.test.ts",
+        "apps/web/src/components/profiles/profile-library-server.ts",
+        "apps/web/src/components/watchlist",
+        "apps/web/src/components/settings",
+        "apps/web/src/app/settings",
+        "apps/web/src/lib/viewer-preferences.ts",
+        "apps/web/src/lib/viewer-preferences.test.ts"
+      ],
+      "qualityGates": [
+        "typecheck",
+        "unit"
+      ],
+      "acceptance": "THE DEFECT. Per-viewer state was reached through several independent reads with no single notion of whose state it is, so there was no one place that could answer \"is this snapshot the active profile's\" and no one place a reset could act on. A failed read answered with an empty list, which is indistinguishable from a profile that genuinely has nothing -- an absence standing in for a presence, again.\n\nREQUIRED: ONE SNAPSHOT, ONE PORT, AND A FAILED READ THAT SAYS SO. Watchlist, favourites, Continue Watching, history and resume positions are one coherent per-profile model behind a narrow persistence port. A failed read answers null, never an empty collection, and staleness against the active profile is a value the caller can read rather than a thing it must infer. No port method takes a profile id: scope is derived server-side, so a caller cannot ask for someone else's state.\n\nREQUIRED: PREFERENCES ARE VERSIONED AND THE MIGRATION IS TOTAL. A stored record written by an older build must never crash a newer one. The migration accepts anything, including a record of the wrong shape, and the test asserts that over hostile input rather than over the happy path.\n\nREQUIRED: DELETION IS VERIFIED BY RE-READ, NOT BY STATUS CODE. A 204 proves a request was accepted, not that data is gone. Each reset that is implemented re-reads and asserts absence; each reset that is NOT implemented refuses honestly and names what it cannot remove. A control that appears to delete and does not is worse than no control.\n\nREQUIRED: NO BROWSER STORAGE, STILL. This application deliberately uses no localStorage and no sessionStorage, and two existing tests enforce it. Persistence goes through the server-side repository.\n\nREQUIRED: THE TWO UNGUARDED MODERN APIs ON THIS SURFACE ARE GUARDED. Intl.Segmenter is constructed and destructured in the avatar path and Object.hasOwn is read in the watchlist path; both run inside the application shell on the installed WebView2 build that is currently failing with a client TypeError. Guard the property access itself, the construction, and the destructuring -- the iterator is a separate failure point from the constructor -- and make the fallback correct for astral characters rather than returning a lone surrogate.\n\nMUST NOT: introduce an account system, a cloud dependency or a sync service. MUST NOT fabricate a favourites feature: if there is no store for it, report not-implemented.",
+      "owner": "claude-frontend",
+      "implementationAgent": "claude-frontend",
+      "updatedAt": "2026-10-12T14:33:32.128Z",
+      "implementationBaseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+      "implementationBaseProvenance": {
+        "kind": "reconciled-existing-implementation",
+        "baseSha": "62c88fa4cb13faf1e28c9ea9c457da9b57895136",
+        "reconciledAt": "2026-10-12T14:30:18.274Z",
+        "reconciledBy": "claude-frontend",
+        "implementationAgent": "claude-frontend",
+        "headAtReconciliation": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+        "reviewSurface": "allowedPaths + reviewDependencies",
+        "surfaceCommitCount": 1,
+        "oldestSurfaceCommit": "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b",
+        "newestSurfaceCommit": "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b",
+        "surfaceCommits": [
+          "f3df5249cb4e3bc87df2f76449dc4c6eb4fbad5b"
+        ],
+        "surfaceCommitsTruncated": false,
+        "changedFileCount": 18,
+        "baseCommitSurfaceTouchCount": 0,
+        "baseCommitSurfaceTouches": [],
+        "baseCommitSurfaceTouchesTruncated": false,
+        "reason": "Wave 132 ran nine workstreams in parallel from this commit; all five implementations were written, tested and committed before any of these tasks was filed, because the tasks were derived from the finished disjoint surfaces rather than the reverse. 62c88fa is the branch tip at which every worker started and the last commit before any Wave 132 code exists."
+      },
+      "gateResults": {
+        "typecheck": {
+          "status": "pass",
+          "at": "2026-10-12T14:31:49.827Z",
+          "by": "claude-frontend",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "TYPECHECK at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx tsc --noEmit -p apps/web: exit 0. npx eslint . --ignore-pattern dist/** in apps/web: 0 errors, 2 pre-existing warnings. npm run repo:validate passed. npm run ai:validate: 167 tasks, 9 agents. npm run build:desktop -w @liberty/web built and apps/desktop/scripts/package-sidecar.mjs laid the packaged tree out from it; apps/desktop/scripts/packaged-server-smoke.mjs then passed 7 checks against the relocated artifact, including 16 distinct non-builtin external specifiers across 159 chunks all resolvable and no symlink anywhere in the tree -- so this change did not disturb the packaging fixes of rounds 130 and 130A."
+        },
+        "unit": {
+          "status": "pass",
+          "at": "2026-10-12T14:32:10.920Z",
+          "by": "claude-frontend",
+          "commitSha": "541ea53bb509d2cea9e063a80118e1269cf7d1ac",
+          "evidence": "UNIT at 541ea53bb509d2cea9e063a80118e1269cf7d1ac. npx vitest run --root apps/web over the 7 new/changed files: 189 tests passing. Over the whole personalization surface (lib/viewer-preferences + components/profiles + components/watchlist + components/settings): 13 files, 269 passing. Whole suite: 127 files, 2548 tests. npx eslint over the 11 changed source files: clean.\n\nWHAT THE TESTS PIN. (1) A FAILED READ ANSWERS null, NEVER AN EMPTY COLLECTION. An empty list is indistinguishable from a profile that genuinely has nothing, which is the absence-standing-in-for-a-presence defect this project keeps finding; loadProfileLibrary never throws and a failure is a distinguishable value. (2) NO PORT METHOD TAKES A PROFILE ID. Scope is derived server-side (PL-0405), so a caller cannot ask for another viewer's state. (3) THE PREFERENCES MIGRATION IS TOTAL and is asserted over hostile input rather than a happy path: a record of the wrong shape, wrong types and missing fields each produce a valid record rather than a throw, because a record written by an older build must never crash a newer one. (4) DELETION IS VERIFIED BY RE-READ. The two live deletions (preferences, watchlist) issue real requests and then re-read and assert absence; a 204 proves acceptance, not removal. The resets that are NOT implemented -- history, profile, everything -- refuse honestly and name what they cannot remove, rather than appearing to work. (5) THE TWO MEASURED MODERN-API SITES ARE GUARDED. Intl.Segmenter now has three guards: typeof Intl, because the property access itself can throw; typeof Segmenter; and a try around construction AND the destructuring, because Segments needing Symbol.iterator is a separate failure point from the constructor. The old fallback slice(0,1) returned a LONE SURROGATE for exactly the astral names the segmenter exists for, and is replaced with a code-point reader. Object.hasOwn in watchlist-state.ts became Object.prototype.hasOwnProperty.call; hasOwn semantics were kept deliberately rather than switching to the in operator, which would accept \"toString\" as a mutation reason and hand the control a function as a presence. (6) No localStorage and no sessionStorage: the two existing source rules that enforce that still pass.\n\nNOT DONE, STATED RATHER THAN IMPLIED: profile DELETION has no endpoint and no port method, because the repository has no archiveProfile; favourites report not-implemented because no store exists for them and were not faked; playbackRate is modelled, migrated and tested but has no column, so a loaded record always carries 1; there is no bulk watchlist delete, so clearing a 50-entry list is 50 sequential requests. Client-component behaviour in data-reset-section.tsx is source-asserted only, because this suite is environment node."
+        }
+      }
+    },
+    {
+      "dependencies": [],
+      "reviewDependencies": [
+        "apps/web/src/lib/server-bootstrap.ts",
+        "apps/web/src/lib/catalog-source-registry.ts",
+        "packages/persistence/src/client.ts",
+        "apps/desktop/src-tauri/src/sidecar.rs"
+      ],
+      "reviewAgent": "gpt-architect",
+      "status": "BLOCKED",
+      "notes": "FILED 2026-10-12 as part of Wave 132.",
+      "id": "PL-0766",
+      "priority": "P0",
+      "lane": "Architecture",
+      "preferredAgent": "gpt-architect",
+      "blockedReason": "Awaiting an architecture decision from gpt-architect: what store and what catalog source ship inside the Windows MSI.",
+      "title": "The installed application has neither a catalog source nor a data store, so nothing it shows can ever be a fact",
+      "allowedPaths": [
+        "docs/DESKTOP_DATA_PLANE.md",
+        "coordination/DECISION_QUEUE.md"
+      ],
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "MEASURED ON 2026-10-12 BY DRIVING THE PACKAGED ARTIFACT WITH A REAL BROWSER, not by reading the code. The relocated packaged sidecar was booted and the homepage loaded in Chromium with a valid sidecar token. Two facts came out of it, and both are product-level rather than Windows-level:\n\n  (1) stdout: catalog metadata source: none requested (set LIBERTY_CATALOG_SOURCE_ID to configure one)\n  (2) GET /api/v1/profiles answered 503 with\n      {\"outcome\":\"unavailable\",\"reasons\":[{\"code\":\"storage_not_configured\",\n       \"detail\":\"DATABASE_URL is not set and this process is a deployment, so no store is available; ...\"}]}\n\nNeither variable is set anywhere in apps/desktop: there is no DATABASE_URL in any Rust source, script or bundle manifest, and LIBERTY_CATALOG_SOURCE_ID appears only in server-bootstrap.ts where it is read. packages/persistence is PostgreSQL-only -- there is no SQLite, no embedded engine, no file-backed store anywhere in the dependency tree.\n\nWHAT THIS MEANS, STATED PLAINLY. Even with the client render failure fixed, the installed Windows application can hold no profile, no watchlist, no history and no resume position, and can show no catalog. Every surface would correctly render its unavailable panel. Four consecutive rounds have been spent making the installed application render, and the thing it would render is empty by construction. This is not a bug in any one module; it is a missing decision.\n\nTHE DECISION REQUESTED, AND IT IS NOT THE IMPLEMENTER'S TO MAKE:\n\n  D-132-1  What store ships inside the MSI? A local PostgreSQL server in the installer is heavy and is a service to supervise. An embedded engine (SQLite or PGlite) is a new dependency and a second schema dialect for packages/persistence to satisfy. A file-backed repository behind the existing port adds no dependency but duplicates query logic. ABSOLUTE_CLOUD_CEILING = 0.0 excludes a hosted database outright.\n\n  D-132-2  What catalog source does a desktop install have on first run? The licensed ingestion source needs network egress, which contradicts offline-first as a default rather than as a fallback. A user-owned local library source -- the viewer points the application at their own media folder -- needs no network, no credential and no new dependency, and is content the user already owns, but it is a new source that must enter the frozen licensed-source list deliberately and must never present a filename as metadata it has verified.\n\nREQUIRED OF THIS TASK: the decision, recorded with its rationale, and a desktop data-plane document stating what the installed product is supposed to contain. It implements neither option.\n\nMUST NOT: pick one of these by default in an implementation task, ship a store or a source as a side effect of another change, or let the installed application keep presenting \"no data\" and \"no store\" as the same unavailable panel."
     }
   ]
 }
