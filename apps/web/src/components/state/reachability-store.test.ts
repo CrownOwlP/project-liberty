@@ -373,12 +373,22 @@ describe("a host whose navigator.onLine misbehaves must not take the frame down"
       throw new TypeError("onLine is not available");
     });
     mountable();
-    let teardown: (() => void) | null = null;
-    expect(() => {
-      teardown = observeBrowser();
-    }).not.toThrow();
+    /*
+     * CALLED DIRECTLY RATHER THAN INSIDE expect(...).not.toThrow(), and the
+     * reason is worth a line because the first draft of this test is what
+     * broke CI. Assigning the teardown inside a callback defeats TypeScript's
+     * control-flow analysis -- the variable stays narrowed to `null`, so
+     * `teardown?.()` is a call on `never` -- and `next build` typechecks test
+     * files, so the type error failed the Windows package job as well as the
+     * CI typecheck. Calling it directly is also the stronger assertion: if
+     * `observeBrowser` throws, the test fails by throwing, which is exactly
+     * the property being asserted, and the returned value is checked to be a
+     * teardown rather than assumed.
+     */
+    const teardown = observeBrowser();
+    expect(typeof teardown).toBe("function");
     expect(isObserving()).toBe(true);
-    teardown?.();
+    teardown();
   });
 
   it("treats an unreadable answer as online, so the verdict still gets verified", () => {
@@ -389,7 +399,10 @@ describe("a host whose navigator.onLine misbehaves must not take the frame down"
     browserSays(() => undefined as unknown as boolean);
     mountable();
     const teardown = observeBrowser();
-    expect(snapshot().reachability).not.toBe("offline");
+    /* `kind` -- the field this store actually publishes. Every other
+     * assertion in this file reads it; the first draft of this one invented a
+     * `reachability` property and the type error failed two workflows. */
+    expect(snapshot().kind).not.toBe("offline");
     teardown();
   });
 });
