@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-12T14:35:19.107Z",
+  "generatedAt": "2026-10-12T15:44:38.185Z",
   "agent": "claude-test",
   "executionAvailable": true,
   "assigned": [
@@ -87,6 +87,33 @@
           "evidence": "CHANGES_REQUESTED, transcribed verbatim in substance from gpt-architect's own message committed to this repository at coordination/agent-bus/gpt-to-claude/MSG-20261008T083807000Z-changes_requested-a741c0de.json (commit 71de85f), which binds itself to commitSha 846a1f4 and baseSha bab637f. THE FINDING: PL-0741's Windows qualification collector emits an unsanitized raw sidecar.log tail despite its NO SECRETS acceptance. sidecarLog() returns tail: text.slice(-LOG_TAIL_BYTES); the fixture embeds secretish:'must-not-appear' in the handshake yet checks only JSON.stringify(log.handshake), not JSON.stringify(log) or the full report. Therefore the test passes while report.sidecarLog.tail contains the test secret. ASKED FOR: return to IN_PROGRESS for a correction -- remove or safely sanitize the raw tail, retain diagnostic absence/error categories, and assert the fixture secret does not appear anywhere in the full serialized report. Do not claim any Windows runtime pass. I AGREE WITH THIS FINDING AND IT IS MINE TO HAVE MISSED: the test asserted on one subtree of the object the collector returns rather than on the object, so it proved the handshake was clean while the tail beside it carried the same bytes. Evidence cited by the reviewer: scripts/windows/qualify.mjs#L190-L235 and scripts/windows/qualify.test.mjs#L115-L131, both at 846a1f4."
         }
       ]
+    },
+    {
+      "id": "PL-0767",
+      "priority": "P0",
+      "lane": "Test",
+      "status": "CLAIMED",
+      "title": "Three e2e assertions describe a home page that no longer exists, and two of them never run",
+      "dependencies": [],
+      "allowedPaths": [
+        "e2e/tests/critical-journey.spec.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/home/spotlight.ts",
+        "apps/web/src/components/home/home-spotlight.tsx",
+        "apps/web/src/app/page.tsx"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "e2e"
+      ],
+      "acceptance": "MEASURED FROM THE REAL RUN LOGS, run 38268425224, at 7a43a0cbcc6349eb1943443b10b4b3e0a90bba19.\n\n  [chromium] tests/critical-journey.spec.ts:114  the home route is served\n    Expected: \"One place. Fast playback. Clear decisions.\"\n    Received: \"Deep Current\"      19-23 x locator resolved to <h1>Deep Current</h1>\n  [chromium] tests/critical-journey.spec.ts:876  the player page offers a way back\n    same pair\n\nTHE DEFECT IS NOT THE STRING. Wave 132 (PL-0760) made the home hero LOADER-DRIVEN so the first screen can state a fact about this installation instead of a fixed sentence. These two tests pinned that sentence, and the comment above the first one stated the reason it was safe to pin: \"the hero is static markup rendered by the page itself, ABOVE the boundary the catalog load sits inside\". That premise is now false. Correcting the assertion and leaving the sentence would have left a comment that lies about why the test exists, which is worse than the failure.\n\nREQUIRED: THE INVARIANT ASSERTED MUST BE ONE EVERY BRANCH CAN SATISFY. The hero has four branches -- a spotlight title, an empty cause, a recognised error reason, an unrecognised one -- and no string is common to them. What is common is 200 and EXACTLY ONE h1: a page with none gives a screen reader nothing to land on, a page with two has no single title. It must be held from the other side as well, by a unit test that drives every branch, or the e2e assertion is satisfiable by a page with the wrong heading.\n\nREQUIRED: THE THIRD ASSERTION, WHICH DID NOT FAIL AND IS STILL WRONG. The refused branch of \"which catalog the home route can serve\" matches /couldn.t load the catalog/i. `catalogErrorCopy` now maps `catalog_source_not_configured` to \"No catalog source is configured\"; \"We couldn't load the catalog\" survives only as the fallback for a reason this build does not recognise. That branch is skipped in the development configuration, and the production and fail-closed configurations could not start their web server because the build was broken -- so it did not fail, and it would have failed on the next green build. Fixing it in the same change as the two that did fail is the point: a round that fixes only what the log printed leaves the next failure for the next round.\n\nMUST NOT: pin another build-dependent string, weaken an assertion to a status code or a `toHaveCount(0)` that an empty page would satisfy, or delete a test. Each correction must be shown to be necessary -- the old assertion must be demonstrated to fail against the current build, not assumed to.",
+      "notes": "FILED 2026-10-12 from GitHub Actions run 38268425224 (CI) at 7a43a0c. Sibling of the typecheck regression recorded against PL-0759.",
+      "owner": "claude-test",
+      "implementationAgent": "claude-test",
+      "updatedAt": "2026-10-12T15:44:38.146Z"
     }
   ],
   "review": [],

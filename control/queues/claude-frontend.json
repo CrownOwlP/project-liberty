@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-12T14:35:19.105Z",
+  "generatedAt": "2026-10-12T15:44:38.183Z",
   "agent": "claude-frontend",
   "executionAvailable": true,
   "assigned": [
@@ -7,7 +7,7 @@
       "id": "PL-0759",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "The screen the operator is looking at is the only one that cannot say what failed",
       "dependencies": [],
       "allowedPaths": [
@@ -39,7 +39,7 @@
       "notes": "FILED 2026-10-11 from the Wave 131 operator report. Two recon findings were checked and REJECTED before this was written: that the packaged proxy fails to forward a CSP nonce (the live packaged response carries a nonce on all 12 script tags), and that the homepage is served as an error page on Linux (it is the real application, 200). Both came from subagent reads of prerendered build output rather than of a live response. WAVE 132: surface widened by two modules and one gate added, deliberately. The frame-capture work added to the report two fields that cross a diagnostic boundary the task's own acceptance had closed (`shape`, derived from the message; `frames`, derived from the stack), so `security-review` is now required rather than trusted. network-state.ts and reachability-store.ts were added because the browser measurement named them: the frame the new capture produced resolved to an unguarded `navigator.onLine` in observeBrowser, forty lines below a guarded reader it did not use. Shipping a diagnostic for that class while leaving the measured instance in place would have been absurd.",
       "owner": "claude-frontend",
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-12T14:33:30.466Z",
+      "updatedAt": "2026-10-12T15:44:37.856Z",
       "implementationBaseSha": "f02703e88c8bbe4dc8c5141b3b21bd4b7b50fdc0",
       "gateResults": {
         "typecheck": {

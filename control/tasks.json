@@ -15302,7 +15302,7 @@
       "id": "PL-0759",
       "priority": "P0",
       "lane": "Frontend",
-      "status": "REVIEW",
+      "status": "IN_PROGRESS",
       "title": "The screen the operator is looking at is the only one that cannot say what failed",
       "dependencies": [],
       "allowedPaths": [
@@ -15334,7 +15334,7 @@
       "notes": "FILED 2026-10-11 from the Wave 131 operator report. Two recon findings were checked and REJECTED before this was written: that the packaged proxy fails to forward a CSP nonce (the live packaged response carries a nonce on all 12 script tags), and that the homepage is served as an error page on Linux (it is the real application, 200). Both came from subagent reads of prerendered build output rather than of a live response. WAVE 132: surface widened by two modules and one gate added, deliberately. The frame-capture work added to the report two fields that cross a diagnostic boundary the task's own acceptance had closed (`shape`, derived from the message; `frames`, derived from the stack), so `security-review` is now required rather than trusted. network-state.ts and reachability-store.ts were added because the browser measurement named them: the frame the new capture produced resolved to an unguarded `navigator.onLine` in observeBrowser, forty lines below a guarded reader it did not use. Shipping a diagnostic for that class while leaving the measured instance in place would have been absurd.",
       "owner": "claude-frontend",
       "implementationAgent": "claude-frontend",
-      "updatedAt": "2026-10-12T14:33:30.466Z",
+      "updatedAt": "2026-10-12T15:44:37.856Z",
       "implementationBaseSha": "f02703e88c8bbe4dc8c5141b3b21bd4b7b50fdc0",
       "gateResults": {
         "typecheck": {
@@ -15813,6 +15813,33 @@
         "architecture-review"
       ],
       "acceptance": "MEASURED ON 2026-10-12 BY DRIVING THE PACKAGED ARTIFACT WITH A REAL BROWSER, not by reading the code. The relocated packaged sidecar was booted and the homepage loaded in Chromium with a valid sidecar token. Two facts came out of it, and both are product-level rather than Windows-level:\n\n  (1) stdout: catalog metadata source: none requested (set LIBERTY_CATALOG_SOURCE_ID to configure one)\n  (2) GET /api/v1/profiles answered 503 with\n      {\"outcome\":\"unavailable\",\"reasons\":[{\"code\":\"storage_not_configured\",\n       \"detail\":\"DATABASE_URL is not set and this process is a deployment, so no store is available; ...\"}]}\n\nNeither variable is set anywhere in apps/desktop: there is no DATABASE_URL in any Rust source, script or bundle manifest, and LIBERTY_CATALOG_SOURCE_ID appears only in server-bootstrap.ts where it is read. packages/persistence is PostgreSQL-only -- there is no SQLite, no embedded engine, no file-backed store anywhere in the dependency tree.\n\nWHAT THIS MEANS, STATED PLAINLY. Even with the client render failure fixed, the installed Windows application can hold no profile, no watchlist, no history and no resume position, and can show no catalog. Every surface would correctly render its unavailable panel. Four consecutive rounds have been spent making the installed application render, and the thing it would render is empty by construction. This is not a bug in any one module; it is a missing decision.\n\nTHE DECISION REQUESTED, AND IT IS NOT THE IMPLEMENTER'S TO MAKE:\n\n  D-132-1  What store ships inside the MSI? A local PostgreSQL server in the installer is heavy and is a service to supervise. An embedded engine (SQLite or PGlite) is a new dependency and a second schema dialect for packages/persistence to satisfy. A file-backed repository behind the existing port adds no dependency but duplicates query logic. ABSOLUTE_CLOUD_CEILING = 0.0 excludes a hosted database outright.\n\n  D-132-2  What catalog source does a desktop install have on first run? The licensed ingestion source needs network egress, which contradicts offline-first as a default rather than as a fallback. A user-owned local library source -- the viewer points the application at their own media folder -- needs no network, no credential and no new dependency, and is content the user already owns, but it is a new source that must enter the frozen licensed-source list deliberately and must never present a filename as metadata it has verified.\n\nREQUIRED OF THIS TASK: the decision, recorded with its rationale, and a desktop data-plane document stating what the installed product is supposed to contain. It implements neither option.\n\nMUST NOT: pick one of these by default in an implementation task, ship a store or a source as a side effect of another change, or let the installed application keep presenting \"no data\" and \"no store\" as the same unavailable panel."
+    },
+    {
+      "id": "PL-0767",
+      "priority": "P0",
+      "lane": "Test",
+      "status": "CLAIMED",
+      "title": "Three e2e assertions describe a home page that no longer exists, and two of them never run",
+      "dependencies": [],
+      "allowedPaths": [
+        "e2e/tests/critical-journey.spec.ts"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/home/spotlight.ts",
+        "apps/web/src/components/home/home-spotlight.tsx",
+        "apps/web/src/app/page.tsx"
+      ],
+      "preferredAgent": "claude-test",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "typecheck",
+        "e2e"
+      ],
+      "acceptance": "MEASURED FROM THE REAL RUN LOGS, run 38268425224, at 7a43a0cbcc6349eb1943443b10b4b3e0a90bba19.\n\n  [chromium] tests/critical-journey.spec.ts:114  the home route is served\n    Expected: \"One place. Fast playback. Clear decisions.\"\n    Received: \"Deep Current\"      19-23 x locator resolved to <h1>Deep Current</h1>\n  [chromium] tests/critical-journey.spec.ts:876  the player page offers a way back\n    same pair\n\nTHE DEFECT IS NOT THE STRING. Wave 132 (PL-0760) made the home hero LOADER-DRIVEN so the first screen can state a fact about this installation instead of a fixed sentence. These two tests pinned that sentence, and the comment above the first one stated the reason it was safe to pin: \"the hero is static markup rendered by the page itself, ABOVE the boundary the catalog load sits inside\". That premise is now false. Correcting the assertion and leaving the sentence would have left a comment that lies about why the test exists, which is worse than the failure.\n\nREQUIRED: THE INVARIANT ASSERTED MUST BE ONE EVERY BRANCH CAN SATISFY. The hero has four branches -- a spotlight title, an empty cause, a recognised error reason, an unrecognised one -- and no string is common to them. What is common is 200 and EXACTLY ONE h1: a page with none gives a screen reader nothing to land on, a page with two has no single title. It must be held from the other side as well, by a unit test that drives every branch, or the e2e assertion is satisfiable by a page with the wrong heading.\n\nREQUIRED: THE THIRD ASSERTION, WHICH DID NOT FAIL AND IS STILL WRONG. The refused branch of \"which catalog the home route can serve\" matches /couldn.t load the catalog/i. `catalogErrorCopy` now maps `catalog_source_not_configured` to \"No catalog source is configured\"; \"We couldn't load the catalog\" survives only as the fallback for a reason this build does not recognise. That branch is skipped in the development configuration, and the production and fail-closed configurations could not start their web server because the build was broken -- so it did not fail, and it would have failed on the next green build. Fixing it in the same change as the two that did fail is the point: a round that fixes only what the log printed leaves the next failure for the next round.\n\nMUST NOT: pin another build-dependent string, weaken an assertion to a status code or a `toHaveCount(0)` that an empty page would satisfy, or delete a test. Each correction must be shown to be necessary -- the old assertion must be demonstrated to fail against the current build, not assumed to.",
+      "notes": "FILED 2026-10-12 from GitHub Actions run 38268425224 (CI) at 7a43a0c. Sibling of the typecheck regression recorded against PL-0759.",
+      "owner": "claude-test",
+      "implementationAgent": "claude-test",
+      "updatedAt": "2026-10-12T15:44:38.146Z"
     }
   ]
 }

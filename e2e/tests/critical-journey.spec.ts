@@ -114,15 +114,27 @@ const FIXTURE_ARTEFACTS: readonly string[] = [
 test("the home route is served, whatever it can put on it", async ({ page }) => {
   const response = await page.goto("/");
 
-  /* Mode-independent, and the reason it is worth its own test: the hero is
-   * static markup rendered by the page itself, ABOVE the boundary the catalog
-   * load sits inside, so it is on screen on a build with no metadata source as
-   * much as on one with fixtures. A home route that stopped answering at all
-   * would fail here rather than inside a branch. */
+  /*
+   * THE PREMISE THIS COMMENT USED TO STATE IS NO LONGER TRUE, and leaving the
+   * old sentence beside a corrected assertion would have been worse than the
+   * failing assertion. It read: "the hero is static markup rendered by the page
+   * itself, ABOVE the boundary the catalog load sits inside". Wave 132 made the
+   * hero LOADER-DRIVEN, precisely so that the first screen can state a fact
+   * about this installation instead of a fixed marketing sentence -- so its
+   * text now differs by build (fixtures: the spotlight title; a deployment with
+   * no source: "No catalog source is configured").
+   *
+   * What survives as mode-independent is the pair below, and it is still worth
+   * its own test: the route answers 200, and it renders EXACTLY ONE h1 in every
+   * reachable state. One h1 is the real invariant -- a page with none has no
+   * heading for a screen reader to land on and a page with two has no single
+   * title -- and it is held from the other side by
+   * apps/web/src/components/home/home-ui.test.tsx ("exactly one h1, in a
+   * hero-shaped slot"), which drives every branch of the hero component. The
+   * old assertion pinned a string that four branches cannot all produce.
+   */
   expect(response?.status()).toBe(200);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-    "One place. Fast playback. Clear decisions."
-  );
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 });
 
 test("which catalog the home route can serve is decided by the build, and both are asserted", async ({
@@ -149,7 +161,25 @@ test("which catalog the home route can serve is decided by the build, and both a
      * either character in a test file is how a locator silently stops matching
      * after somebody's editor normalises quotes.
      */
-    await expect(page.getByRole("heading", { name: /couldn.t load the catalog/i })).toBeVisible();
+    /*
+     * THE HEADING FOR THIS REASON CHANGED IN WAVE 132, and this assertion was
+     * not the one that failed in CI -- which is the only reason it is worth a
+     * note. This branch is skipped in the development configuration, so it
+     * never ran; the production and fail-closed configurations that DO run it
+     * could not start their web server, because the build was broken by a
+     * separate type error. So it would have failed on the next green build.
+     *
+     * `catalogErrorCopy` in apps/web/src/components/home/spotlight.ts now maps
+     * `catalog_source_not_configured` to "No catalog source is configured",
+     * with a body that says configuring a source is an operator action. "We
+     * couldn't load the catalog" is still there, but it is now the FALLBACK for
+     * a reason this build does not recognise -- so matching it here would have
+     * asserted the opposite of this branch's point, which is that a refused
+     * source is named rather than lumped in with every other failure.
+     */
+    await expect(
+      page.getByRole("heading", { name: /no catalog source is configured/i })
+    ).toBeVisible();
     await expect(page.getByText("catalog_source_not_configured")).toBeVisible();
 
     /* The panel the reader must NOT get, named rather than implied. */
@@ -876,9 +906,15 @@ test("which branch the watch route takes is decided by the build, and both are a
 test("the player page offers a way back to the catalog", async ({ page }) => {
   await page.goto(`/watch/${DEMO.movie.id}`);
   await page.getByRole("link", { name: "Back to catalog" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-    "One place. Fast playback. Clear decisions."
-  );
+  /*
+   * WHAT THIS TEST IS ABOUT IS THE NAVIGATION, not the words on the
+   * destination. It pinned the old static hero sentence, which the
+   * loader-driven hero no longer produces on any build. Asserting the URL plus
+   * one h1 keeps the actual claim -- the link goes home and home rendered --
+   * and stops this test from failing again the next time home's copy changes.
+   */
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 });
 
 test("an unplayable content id does not reach the player", async ({ page }) => {
