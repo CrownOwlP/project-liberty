@@ -150,10 +150,18 @@ const CHUNK_NAME_PATTERN = /^[A-Za-z0-9_-]{1,59}\.(?:js|mjs)$/;
  */
 export const FAILURE_SHAPES = [
   "undefined_property_read",
+  "undefined_property_write",
   "not_a_function",
   "not_a_constructor",
   "not_defined",
   "illegal_invocation",
+  "not_iterable",
+  "cannot_destructure",
+  "cannot_convert_to_object",
+  "assignment_to_constant",
+  "cannot_redefine_property",
+  "constructor_requires_new",
+  "incompatible_receiver",
   "unclassified"
 ] as const;
 export type FailureShape = (typeof FAILURE_SHAPES)[number];
@@ -168,6 +176,22 @@ export type FailureShape = (typeof FAILURE_SHAPES)[number];
 const SHAPE_PATTERNS: ReadonlyArray<readonly [FailureShape, RegExp]> = [
   ["illegal_invocation", /illegal invocation/i],
   ["not_a_constructor", /is not a constructor/i],
+  ["constructor_requires_new", /cannot be invoked without 'new'/i],
+  ["incompatible_receiver", /called on (?:in)?compatible receiver|called on a non-object|called on non-object/i],
+  ["cannot_redefine_property", /cannot redefine property|cannot assign to read only property|object is not extensible|cannot add property/i],
+  ["assignment_to_constant", /assignment to constant variable/i],
+  ["cannot_destructure", /cannot destructure/i],
+  ["not_iterable", /is not iterable|is not async iterable|non-iterable instance/i],
+  ["cannot_convert_to_object", /cannot convert undefined or null to object/i],
+  /*
+   * WRITE BEFORE READ, and the order is the whole point of this entry. The
+   * operator's Wave 132 report came back `shape: "unclassified"`, and the
+   * reason is visible here: the only pattern for a property access said
+   * "cannot read properties of", so Chromium's "Cannot SET properties of
+   * undefined (setting 'x')" -- a different defect, with a different fix --
+   * matched nothing and the report said nothing.
+   */
+  ["undefined_property_write", /cannot set propert(?:y|ies) of (?:undefined|null)|cannot create property/i],
   ["not_a_function", /is not a function|is not a method/i],
   ["not_defined", /is not defined|can't find variable/i],
   [
@@ -193,6 +217,37 @@ export function classifyFailureShape(message: unknown): FailureShape {
     if (pattern.test(message)) return shape;
   }
   return "unclassified";
+}
+
+/**
+ * THE ONE IDENTIFIER AN ENGINE MESSAGE NAMES, AND NOTHING ELSE OF IT.
+ *
+ * WHY THIS IS NOT "the message, truncated". Wave 132's report carried `shape`
+ * and four frames and still could not say what threw, because the shape came
+ * back `unclassified` and the frame resolved to a benign assignment. The
+ * missing datum is small and specific: every engine message of this kind names
+ * exactly one thing -- `(setting 'toString')`, `(reading 'map')`,
+ * `x.foo is not a function` -- and that name is a JavaScript IDENTIFIER from
+ * our own bundle, not user data.
+ *
+ * So this extracts a single quoted or dotted identifier and validates it
+ * against the same pattern an error's constructor name is validated against.
+ * Anything that is not a bare identifier -- a path, a URL, a query string, a
+ * connection string, anything containing a slash, a space, an `@` or an `=` --
+ * cannot match and becomes `null`. No free text travels, which is the property
+ * the acceptance of this task closed the boundary for in the first place.
+ */
+export const MAX_DETAIL_LENGTH = 64;
+const DETAIL_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const QUOTED_IDENTIFIER = /'([^']{1,64})'/;
+
+export function extractFailureDetail(message: unknown): string | null {
+  if (typeof message !== "string" || message.length === 0 || message.length > 2048) return null;
+  const quoted = QUOTED_IDENTIFIER.exec(message);
+  const candidate = quoted?.[1];
+  if (candidate === undefined) return null;
+  if (candidate.length > MAX_DETAIL_LENGTH) return null;
+  return DETAIL_PATTERN.test(candidate) ? candidate : null;
 }
 
 /**
@@ -272,6 +327,17 @@ export interface ClientFailureReport {
   readonly hadMessage: boolean;
   /** What the message said, as a closed vocabulary. Never the message. */
   readonly shape: FailureShape;
+  /** The one identifier the message named, validated as a bare identifier. */
+  readonly detail: string | null;
+  /**
+   * How long the message was.
+   *
+   * A NUMBER, so it leaks nothing, and it is here because `hadMessage: true`
+   * could not distinguish a message this build failed to classify from one it
+   * classified. With the length, an unclassified report still says whether the
+   * engine produced a sentence or a single word.
+   */
+  readonly messageLength: number;
   /** Served-asset positions only. Never a path and never a function name. */
   readonly frames: readonly ClientFailureFrame[];
 }
@@ -333,6 +399,8 @@ export function describeClientFailure(
   try { frames = extractFailureFrames(stack); } catch { frames = []; }
   let shape: FailureShape = "unclassified";
   try { shape = classifyFailureShape(message); } catch { shape = "unclassified"; }
+  let detail: string | null = null;
+  try { detail = extractFailureDetail(message); } catch { detail = null; }
   return {
     boundary,
     pathname: sanitisePathname(pathname),
@@ -340,6 +408,8 @@ export function describeClientFailure(
     errorName: constrained(name, ERROR_NAME_PATTERN, MAX_ERROR_NAME_LENGTH),
     hadMessage: typeof message === "string" && message.length > 0,
     shape,
+    detail,
+    messageLength: typeof message === "string" ? Math.min(message.length, 4096) : 0,
     frames
   };
 }
@@ -372,6 +442,16 @@ export function readClientFailure(body: unknown): ClientFailureReport | null {
      * operator pastes.
      */
     shape: FAILURE_SHAPES.find((candidate) => candidate === bag.shape) ?? "unclassified",
+    /* Re-validated as a bare identifier, exactly as the client built it, so a
+     * crafted body cannot put chosen text into the operator's log through it. */
+    detail: constrained(bag.detail, DETAIL_PATTERN, MAX_DETAIL_LENGTH),
+    messageLength:
+      typeof bag.messageLength === "number" &&
+      Number.isSafeInteger(bag.messageLength) &&
+      bag.messageLength >= 0 &&
+      bag.messageLength <= 4096
+        ? bag.messageLength
+        : 0,
     /*
      * AND THE FRAMES ARE REBUILT, not filtered. Each one is reconstructed from
      * three validated primitives, so no extra property on a submitted frame
@@ -442,6 +522,7 @@ export function formatClientFailureReference(report: ClientFailureReport): strin
   const parts: string[] = [report.boundary];
   if (report.errorName !== null) parts.push(report.errorName);
   if (report.shape !== "unclassified") parts.push(report.shape);
+  if (report.detail !== null) parts.push(report.detail);
   const frame = report.frames[0];
   if (frame !== undefined) parts.push(`${frame.chunk}:${String(frame.line)}:${String(frame.column)}`);
   if (report.digest !== null) parts.push(`digest ${report.digest}`);

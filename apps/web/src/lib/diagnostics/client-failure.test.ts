@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CLIENT_FAILURE_LOG_PREFIX,
   MAX_CHUNK_NAME_LENGTH,
+  MAX_DETAIL_LENGTH,
+  extractFailureDetail,
   MAX_DIGEST_LENGTH,
   MAX_ERROR_NAME_LENGTH,
   MAX_FAILURE_FRAMES,
@@ -72,6 +74,8 @@ describe("describeClientFailure", () => {
       errorName: "Error",
       hadMessage: true,
       shape: "unclassified",
+      detail: null,
+      messageLength: "connection string in here".length,
       frames: []
     });
   });
@@ -86,10 +90,12 @@ describe("describeClientFailure", () => {
     expect(serialised).not.toContain("pw@host");
     expect(Object.keys(report).sort()).toEqual([
       "boundary",
+      "detail",
       "digest",
       "errorName",
       "frames",
       "hadMessage",
+      "messageLength",
       "pathname",
       "shape"
     ]);
@@ -162,6 +168,8 @@ describe("readClientFailure", () => {
       errorName: null,
       hadMessage: false,
       shape: "unclassified",
+      detail: null,
+      messageLength: 0,
       frames: []
     });
   });
@@ -333,10 +341,26 @@ describe("describeClientFailure, with the Wave 132 fields", () => {
     expect(report.errorName).toBe("Error");
     expect(report.shape).toBe("undefined_property_read");
     expect(report.frames[0]).toEqual({ chunk: "1oml7c7env4-g.js", line: 31, column: 41369 });
-    /* And still nothing that could be a secret or a path. */
+
+    /*
+     * THIS ASSERTION CHANGED, AND THE OLD ONE WAS RIGHT TO FAIL.
+     *
+     * It used to require that "addEventListener" -- the property the message
+     * named -- did not appear anywhere in the serialisation. That was the
+     * boundary as Wave 132 drew it, and this round MOVED it: `detail` now
+     * carries exactly that identifier, because the operator's report came back
+     * unclassified with a frame on a benign assignment and the property name is
+     * the datum that would have ended the diagnosis.
+     *
+     * What is asserted instead is the boundary as it now stands, stated
+     * positively: a bare identifier may travel, and NOTHING ELSE from the
+     * message may. No sentence, no host, no scheme, no path.
+     */
+    expect(report.detail).toBe("addEventListener");
     const serialised = JSON.stringify(report);
-    expect(serialised).not.toContain("addEventListener");
-    expect(serialised).not.toContain("127.0.0.1");
+    for (const forbidden of ["Cannot read", "properties of", "(reading", "127.0.0.1", "http"]) {
+      expect(serialised, forbidden).not.toContain(forbidden);
+    }
   });
 
   it("loses only the field a throwing getter guards, not the other three", () => {
@@ -506,5 +530,130 @@ describe("reportClientFailure's own budget", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+});
+
+describe("the gap the operator's Wave 132 report left, closed", () => {
+  /*
+   * THE REPORT THAT PROMPTED THIS, verbatim from the installed MSI at
+   * faa6e8a84de4b40bd28ef6120588d62a649aae1b:
+   *
+   *   {"boundary":"global-error","pathname":"/","digest":null,
+   *    "errorName":"TypeError","hadMessage":true,"shape":"unclassified",
+   *    "frames":[{"chunk":"2ic50n3d1m9j1.js","line":1,"column":8511}, ...]}
+   *
+   * `shape: "unclassified"` was not a near miss. The only pattern for a
+   * property access read "cannot read properties of", so every WRITE form --
+   * which is a different defect with a different fix -- fell through, and so
+   * did eight other shapes an engine produces. These tests pin the forms that
+   * fell through, with the write form first because it is the one the report
+   * most likely was.
+   */
+  it("classifies the write form that fell through, and names the property", () => {
+    const error = Object.assign(
+      new TypeError("Cannot set properties of undefined (setting 'toString')"),
+      { stack: REAL_CHROMIUM_STACK }
+    );
+    const report = describeClientFailure("global-error", error, "/");
+    expect(report.shape).toBe("undefined_property_write");
+    expect(report.detail).toBe("toString");
+    /*
+     * And it still carries no part of the sentence itself. Checked against
+     * sentence fragments rather than against the word "undefined", which the
+     * shape NAME legitimately contains -- the first draft of this assertion
+     * failed on its own vocabulary, which is a false positive worth not
+     * shipping as a rule.
+     */
+    const serialised = JSON.stringify(report);
+    for (const forbidden of ["Cannot set", "properties of", "(setting", " "]) {
+      expect(serialised, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it("classifies the other eight forms a module-evaluation failure produces", () => {
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["Assignment to constant variable.", "assignment_to_constant"],
+      ["Cannot convert undefined or null to object", "cannot_convert_to_object"],
+      ["th is not iterable", "not_iterable"],
+      ["Invalid attempt to spread non-iterable instance", "not_iterable"],
+      ["Cannot destructure property 'promise' of 'Promise.withResolvers(...)' as it is undefined.", "cannot_destructure"],
+      ["Cannot redefine property: toString", "cannot_redefine_property"],
+      ["Cannot add property toString, object is not extensible", "cannot_redefine_property"],
+      ["Cannot assign to read only property 'toString' of object '[object Module]'", "cannot_redefine_property"],
+      ["Class constructor x cannot be invoked without 'new'", "constructor_requires_new"],
+      ["Method Set.prototype.add called on incompatible receiver #<Set>", "incompatible_receiver"],
+      ["Cannot create property 'errToObj' on string 'x'", "undefined_property_write"]
+    ];
+    for (const [message, shape] of cases) {
+      expect(classifyFailureShape(message), message).toBe(shape);
+    }
+  });
+
+  it("keeps the read form classified as read, so the two stay distinguishable", () => {
+    expect(classifyFailureShape("Cannot read properties of undefined (reading 'map')")).toBe(
+      "undefined_property_read"
+    );
+    expect(classifyFailureShape("Cannot set properties of undefined (setting 'map')")).toBe(
+      "undefined_property_write"
+    );
+  });
+});
+
+describe("extractFailureDetail", () => {
+  it("takes the one identifier an engine message names", () => {
+    expect(extractFailureDetail("Cannot set properties of undefined (setting 'toString')")).toBe("toString");
+    expect(extractFailureDetail("Cannot read properties of undefined (reading 'addEventListener')")).toBe(
+      "addEventListener"
+    );
+    expect(extractFailureDetail("Cannot redefine property: toString")).toBeNull();
+  });
+
+  it("REFUSES anything that is not a bare identifier, which is the security property", () => {
+    /* These are the shapes the acceptance of this task closed the boundary
+     * for: a path, a URL, a connection string, a query, a token. None of them
+     * is an identifier, so none of them can travel through this field. */
+    for (const message of [
+      "Cannot read properties of undefined (reading 'postgres://user:pw@host/db')",
+      "Cannot set properties of undefined (setting 'D:\\a\\project-liberty\\apps\\web')",
+      "Cannot read properties of undefined (reading '/api/v1/catalog?token=sekrit')",
+      "Cannot read properties of undefined (reading 'two words')",
+      "Cannot read properties of undefined (reading 'a-b')",
+      "Cannot read properties of undefined (reading '')",
+      `Cannot read properties of undefined (reading '${"a".repeat(MAX_DETAIL_LENGTH + 1)}')`
+    ]) {
+      expect(extractFailureDetail(message), message).toBeNull();
+    }
+  });
+
+  it("is total, and bounded against an attacker-sized message", () => {
+    for (const value of [null, undefined, 42, {}, [], Symbol("s")]) {
+      expect(extractFailureDetail(value)).toBeNull();
+    }
+    expect(extractFailureDetail(`${"x".repeat(3000)}'ok'`)).toBeNull();
+  });
+
+  it("the server re-validates it rather than believing the body", () => {
+    const read = readClientFailure({
+      boundary: "global-error",
+      pathname: "/",
+      detail: "postgres://user:pw@host/db",
+      messageLength: 999999
+    });
+    expect(read?.detail).toBeNull();
+    expect(read?.messageLength).toBe(0);
+    expect(formatClientFailureLine(read!)).not.toContain("postgres");
+  });
+
+  it("reaches the screen as well as the log, because the POST can be refused", () => {
+    const report = describeClientFailure(
+      "global-error",
+      Object.assign(new TypeError("Cannot set properties of undefined (setting 'toString')"), {
+        stack: REAL_CHROMIUM_STACK
+      }),
+      "/"
+    );
+    expect(formatClientFailureReference(report)).toBe(
+      "global-error \u00b7 TypeError \u00b7 undefined_property_write \u00b7 toString \u00b7 1oml7c7env4-g.js:31:41369"
+    );
   });
 });
