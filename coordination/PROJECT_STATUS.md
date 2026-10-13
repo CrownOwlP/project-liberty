@@ -1,8 +1,8 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-13T04:19:40.797Z from the AI control plane.
+> Generated 2026-10-13T04:47:46.927Z from the AI control plane.
 
-**Overall completion:** 122/166 executable tasks (73%)
+**Overall completion:** 122/167 executable tasks (73%)
 
 ## Status summary
 
@@ -11,7 +11,7 @@
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
 - **REVIEW:** 20
-- **BLOCKED:** 14
+- **BLOCKED:** 15
 - **DONE:** 122
 - **CANCELED:** 0
 - **SUPERSEDED:** 4
@@ -56,7 +56,7 @@
 
 - **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
-- **BLOCKED:** 14
+- **BLOCKED:** 15
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
@@ -153,6 +153,7 @@ THE COST, STATED: unblocking discards gate results, so PL-0753's build and unit 
 
 UNBLOCK WHEN: gpt-architect's security-review arrives, or PL-0754 has cleared the directory -- whichever is first. This task's own work needs nothing further.
 - **PL-0766** The installed application has neither a catalog source nor a data store, so nothing it shows can ever be a fact: reason not recorded
+- **PL-0770** ROOT CAUSE FOUND: the installed app dies because something freezes Object.prototype before our bundle runs: reason not recorded
 
 ## Agent capacity
 
