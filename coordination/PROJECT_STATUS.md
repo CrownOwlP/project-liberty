@@ -1,16 +1,16 @@
 # Project Liberty - Project Status
 
-> Generated 2026-10-12T15:46:29.712Z from the AI control plane.
+> Generated 2026-10-13T04:19:40.797Z from the AI control plane.
 
-**Overall completion:** 122/164 executable tasks (74%)
+**Overall completion:** 122/166 executable tasks (73%)
 
 ## Status summary
 
 - **BACKLOG:** 7
-- **READY:** 2
+- **READY:** 3
 - **CLAIMED:** 0
 - **IN_PROGRESS:** 0
-- **REVIEW:** 19
+- **REVIEW:** 20
 - **BLOCKED:** 14
 - **DONE:** 122
 - **CANCELED:** 0
@@ -50,17 +50,18 @@
 - **PL-0763** [REVIEW] Live TV is a nav entry with no destination, and no code that could read a playlist if a licensed feed arrived — owner: claude-media
 - **PL-0764** [REVIEW] Watchlist, history, resume and preferences are four unrelated reads, so switching profile switches some of them — owner: claude-frontend
 - **PL-0767** [REVIEW] Three e2e assertions describe a home page that no longer exists, and two of them never run — owner: claude-test
+- **PL-0768** [REVIEW] Nothing anywhere proves the packaged application STARTS, only that it is served — owner: claude-test
 
 ## Dispatch classification
 
-- **READY_AND_EXECUTABLE:** 2
+- **READY_AND_EXECUTABLE:** 3
 - **READY_BUT_EXTERNAL:** 0
 - **BLOCKED:** 14
 - **BACKLOG (dependency-gated):** 7
 
 ## Recommended executable wave
 
-No conflict-free executable tasks can be assigned with current agent capacity.
+- **PL-0769** -> claude-media (P1/Player) The homepage loads shaka-player and 112 KB of vendored core-js, and has no player on it
 
 ## Queued for external agents
 
@@ -160,7 +161,7 @@ UNBLOCK WHEN: gpt-architect's security-review arrives, or PL-0754 has cleared th
 - **claude-frontend:** 0/5 capacity in use, 5 active (5 parked for an external reviewer)
 - **claude-backend:** 0/2 capacity in use, 1 active (1 parked for an external reviewer)
 - **claude-media:** 0/2 capacity in use, 3 active (3 parked for an external reviewer)
-- **claude-test:** 0/3 capacity in use, 2 active (2 parked for an external reviewer)
+- **claude-test:** 0/3 capacity in use, 3 active (3 parked for an external reviewer)
 - **claude-security:** 0/1 capacity in use
 - **claude-infra:** 0/5 capacity in use, 6 active (6 parked for an external reviewer)
 - **human-commander:** 0/99 capacity in use (external lane; not locally executable)

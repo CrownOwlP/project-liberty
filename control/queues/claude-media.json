@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-12T15:46:29.720Z",
+  "generatedAt": "2026-10-13T04:19:40.802Z",
   "agent": "claude-media",
   "executionAvailable": true,
   "assigned": [
@@ -176,5 +176,30 @@
   ],
   "review": [],
   "reservedExternal": [],
-  "recommended": []
+  "recommended": [
+    {
+      "id": "PL-0769",
+      "priority": "P1",
+      "lane": "Player",
+      "status": "READY",
+      "title": "The homepage loads shaka-player and 112 KB of vendored core-js, and has no player on it",
+      "dependencies": [],
+      "allowedPaths": [
+        "docs/CLIENT_BUNDLE.md"
+      ],
+      "reviewDependencies": [
+        "apps/web/src/components/player",
+        "apps/web/src/app/page.tsx",
+        "packages/media-engine",
+        "packages/contracts/src/index.ts"
+      ],
+      "preferredAgent": "claude-media",
+      "reviewAgent": "gpt-architect",
+      "qualityGates": [
+        "architecture-review"
+      ],
+      "acceptance": "MEASURED ON 2026-10-13 by booting the packaged artifact built from faa6e8a and reading the homepage's own script tags, in document order:\n\n   1 0uqxvrcch5o_0.js      6 2ic50n3d1m9j1.js   <- Zod + components/profiles/avatar.ts\n   2 1oml7c7env4-g.js      7 1eoo6bbg-tei8.js\n   3 turbopack-...js       8 0e3rt6sy81x-m.js\n   4 2kio16qodpvga.js      9 0cz1d0mv5g_q7.js   <- shaka-player + vendored core-js, 112594 bytes\n   5 3hvn4kknuhx97.js     10 2mmpezlrfmbu5.js\n\nTWO LEAKS INTO THE CLIENT STARTUP PATH, NEITHER OF WHICH THE HOMEPAGE USES.\n\n(1) SHAKA-PLAYER AND ITS VENDORED core-js. `npm ls core-js` reports nothing and no repository source imports it; shaka-player declares it and ships it inlined. core-js does FEATURE DETECTION AND BUILT-IN PATCHING AT MODULE-EVALUATION TIME -- the chunk contains `__core-js_shared__`, RegExp named-group and dotAll probes, and Object.defineProperty writes against built-ins. The homepage has no player on it. 112 KB of polyfill that patches globals is evaluated on every page load of an application whose target engine needs none of it.\n\n(2) ZOD IN A CLIENT CHUNK. Chunk 6 carries Zod's full runtime beside our own avatar module, which means a client component reaches `@liberty/contracts`. The contracts package is a server-side validation boundary; its presence in the browser is a bundle-graph leak, and it is the chunk the Wave 132 crash frame points into.\n\nWHY THIS IS FILED AND NOT FIXED IN THE SAME ROUND. It is NOT established that either leak causes the Wave 132 startup failure, and saying so would be the unsupported claim the brief forbids. Document order puts the core-js chunk AFTER the chunk the crash frame names, so core-js cannot have mutated the environment before that chunk evaluated. What is established is that both are real defects of their own, on the startup path, in the installed product.\n\nTHE DECISION REQUESTED: whether the player is moved behind a dynamic import so shaka and its polyfill load only on a watch route, and whether `@liberty/contracts` gains a client-safe entry point that carries types without Zod's runtime. Both change the module graph of a product whose packaging has been fragile for five rounds, which is why they are a decision rather than a patch.\n\nMUST NOT: be used as evidence for a cause that has not been demonstrated, and MUST NOT be bundled into a P0 startup-recovery release.",
+      "notes": "FILED 2026-10-13 from the packaged homepage's script tags at faa6e8a."
+    }
+  ]
 }
