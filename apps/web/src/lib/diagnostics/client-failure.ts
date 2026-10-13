@@ -178,7 +178,10 @@ const SHAPE_PATTERNS: ReadonlyArray<readonly [FailureShape, RegExp]> = [
   ["not_a_constructor", /is not a constructor/i],
   ["constructor_requires_new", /cannot be invoked without 'new'/i],
   ["incompatible_receiver", /called on (?:in)?compatible receiver|called on a non-object|called on non-object/i],
-  ["cannot_redefine_property", /cannot redefine property|cannot assign to read only property|object is not extensible|cannot add property/i],
+  [
+    "cannot_redefine_property",
+    /cannot redefine property|cannot assign to read only property|object is not extensible|cannot add property|which has only a getter|cannot set property [A-Za-z_$][A-Za-z0-9_$]* of/i
+  ],
   ["assignment_to_constant", /assignment to constant variable/i],
   ["cannot_destructure", /cannot destructure/i],
   ["not_iterable", /is not iterable|is not async iterable|non-iterable instance/i],
@@ -240,11 +243,17 @@ export function classifyFailureShape(message: unknown): FailureShape {
 export const MAX_DETAIL_LENGTH = 64;
 const DETAIL_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const QUOTED_IDENTIFIER = /'([^']{1,64})'/;
+/*
+ * V8 does not always quote it. "Cannot set property toString of [object Object]
+ * which has only a getter" names the property BARE, and that message is one of
+ * the two the Wave 132 failure was reproduced from -- so a quoted-only reader
+ * would have returned null on the very case this field exists for.
+ */
+const BARE_IDENTIFIER = /(?:cannot set property|cannot redefine property:?) ([A-Za-z_$][A-Za-z0-9_$]{0,63})\b/i;
 
 export function extractFailureDetail(message: unknown): string | null {
   if (typeof message !== "string" || message.length === 0 || message.length > 2048) return null;
-  const quoted = QUOTED_IDENTIFIER.exec(message);
-  const candidate = quoted?.[1];
+  const candidate = QUOTED_IDENTIFIER.exec(message)?.[1] ?? BARE_IDENTIFIER.exec(message)?.[1];
   if (candidate === undefined) return null;
   if (candidate.length > MAX_DETAIL_LENGTH) return null;
   return DETAIL_PATTERN.test(candidate) ? candidate : null;
@@ -292,6 +301,46 @@ function position(raw: string): number | null {
  * Total: a non-string stack, a throwing getter at the call site, a stack with
  * no app frames and an enormous stack all produce an array, never a throw.
  */
+
+/**
+ * HOW MANY FRAMES WERE THROWN AWAY BEFORE THE FIRST ONE WE KEPT.
+ *
+ * THIS IS THE BLIND SPOT THAT COST WAVE 132 A ROUND, AND IT IS WORTH SAYING
+ * EXACTLY HOW. `extractFailureFrames` keeps only frames under `/_next/static/`,
+ * which is what makes a frame safe to report -- and it dropped everything else
+ * SILENTLY. So a stack whose innermost frames belong to a script that is not
+ * ours arrived looking as though the throw happened in OUR code, at the first
+ * of our frames, which is really the CALL SITE. The operator's report named
+ * `2ic50n3d1m9j1.js:1:8511` and three rounds of reading went into that offset
+ * on the assumption that it was where the throw happened.
+ *
+ * It very nearly was not. The reproduction established that the failure is an
+ * assignment refused by a hardened `Object.prototype` -- so if the host's
+ * hardening had used a throwing SETTER rather than a non-writable property, the
+ * innermost frames would have been in the host's own injected script and this
+ * number would have been the only thing in the report that said so.
+ *
+ * A COUNT, not the frames. An integer leaks nothing: not a path, not a host,
+ * not a script name. Zero means the throw really is in our first reported
+ * frame. Anything above zero means it is not, and that is the single most
+ * important bit in the whole report.
+ */
+export const MAX_FRAMES_DROPPED = 999;
+
+export function countDroppedFrames(stack: unknown): number {
+  if (typeof stack !== "string" || stack.length === 0) return 0;
+  const text = stack.length > 65536 ? stack.slice(0, 65536) : stack;
+  let dropped = 0;
+  for (const line of text.split("\n")) {
+    if (!/^\s*at\s/.test(line)) continue;
+    if (line.includes("/_next/static/")) return Math.min(dropped, MAX_FRAMES_DROPPED);
+    dropped += 1;
+  }
+  /* No frame of ours anywhere: every frame was dropped, and the report should
+   * say so rather than implying our code was not on the stack at all. */
+  return Math.min(dropped, MAX_FRAMES_DROPPED);
+}
+
 export function extractFailureFrames(stack: unknown): readonly ClientFailureFrame[] {
   if (typeof stack !== "string" || stack.length === 0) return [];
   const text = stack.length > 65536 ? stack.slice(0, 65536) : stack;
@@ -340,6 +389,14 @@ export interface ClientFailureReport {
   readonly messageLength: number;
   /** Served-asset positions only. Never a path and never a function name. */
   readonly frames: readonly ClientFailureFrame[];
+  /**
+   * How many frames were dropped before the first one in `frames`.
+   *
+   * ZERO means the first reported frame IS the throw site. ABOVE ZERO means it
+   * is not -- the throw happened in a script this report may not name, and the
+   * first reported frame is the call into it.
+   */
+  readonly framesDropped: number;
 }
 
 /**
@@ -397,6 +454,8 @@ export function describeClientFailure(
   try { stack = bag?.stack; } catch { /* kept empty */ }
   let frames: readonly ClientFailureFrame[] = [];
   try { frames = extractFailureFrames(stack); } catch { frames = []; }
+  let framesDropped = 0;
+  try { framesDropped = countDroppedFrames(stack); } catch { framesDropped = 0; }
   let shape: FailureShape = "unclassified";
   try { shape = classifyFailureShape(message); } catch { shape = "unclassified"; }
   let detail: string | null = null;
@@ -410,7 +469,8 @@ export function describeClientFailure(
     shape,
     detail,
     messageLength: typeof message === "string" ? Math.min(message.length, 4096) : 0,
-    frames
+    frames,
+    framesDropped
   };
 }
 
@@ -458,7 +518,14 @@ export function readClientFailure(body: unknown): ClientFailureReport | null {
      * object can survive, and a frame whose chunk is not a bare basename or
      * whose position is not an in-bounds integer is dropped entirely.
      */
-    frames: readFrames(bag.frames)
+    frames: readFrames(bag.frames),
+    framesDropped:
+      typeof bag.framesDropped === "number" &&
+      Number.isSafeInteger(bag.framesDropped) &&
+      bag.framesDropped >= 0 &&
+      bag.framesDropped <= MAX_FRAMES_DROPPED
+        ? bag.framesDropped
+        : 0
   };
 }
 
@@ -524,7 +591,13 @@ export function formatClientFailureReference(report: ClientFailureReport): strin
   if (report.shape !== "unclassified") parts.push(report.shape);
   if (report.detail !== null) parts.push(report.detail);
   const frame = report.frames[0];
-  if (frame !== undefined) parts.push(`${frame.chunk}:${String(frame.line)}:${String(frame.column)}`);
+  if (frame !== undefined) {
+    /* A dropped-frame count above zero is prefixed to the frame, because it
+     * changes what the frame MEANS: with it, the frame is a call site and not
+     * the throw site. An operator reading this off a screen needs that. */
+    const prefix = report.framesDropped > 0 ? `+${String(report.framesDropped)} ` : "";
+    parts.push(`${prefix}${frame.chunk}:${String(frame.line)}:${String(frame.column)}`);
+  }
   if (report.digest !== null) parts.push(`digest ${report.digest}`);
   return parts.join(" \u00b7 ");
 }

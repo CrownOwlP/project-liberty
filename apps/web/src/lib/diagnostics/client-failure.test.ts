@@ -3,6 +3,8 @@ import {
   CLIENT_FAILURE_LOG_PREFIX,
   MAX_CHUNK_NAME_LENGTH,
   MAX_DETAIL_LENGTH,
+  MAX_FRAMES_DROPPED,
+  countDroppedFrames,
   extractFailureDetail,
   MAX_DIGEST_LENGTH,
   MAX_ERROR_NAME_LENGTH,
@@ -65,7 +67,13 @@ describe("sanitisePathname", () => {
 
 describe("describeClientFailure", () => {
   it("keeps a digest that looks like one and the error's name", () => {
-    const error = Object.assign(new Error("connection string in here"), { digest: "9f2a1c" });
+    /* `stack: ""` because this test is about the digest and the name. A real
+     * Node stack has frames, none of them under /_next/static/, so
+     * framesDropped would legitimately be non-zero and say nothing here. */
+    const error = Object.assign(new Error("connection string in here"), {
+      digest: "9f2a1c",
+      stack: ""
+    });
     const report = describeClientFailure("global-error", error, "/watch/x?t=12");
     expect(report).toEqual({
       boundary: "global-error",
@@ -76,7 +84,8 @@ describe("describeClientFailure", () => {
       shape: "unclassified",
       detail: null,
       messageLength: "connection string in here".length,
-      frames: []
+      frames: [],
+      framesDropped: 0
     });
   });
 
@@ -94,6 +103,7 @@ describe("describeClientFailure", () => {
       "digest",
       "errorName",
       "frames",
+      "framesDropped",
       "hadMessage",
       "messageLength",
       "pathname",
@@ -170,7 +180,8 @@ describe("readClientFailure", () => {
       shape: "unclassified",
       detail: null,
       messageLength: 0,
-      frames: []
+      frames: [],
+      framesDropped: 0
     });
   });
 
@@ -605,7 +616,11 @@ describe("extractFailureDetail", () => {
     expect(extractFailureDetail("Cannot read properties of undefined (reading 'addEventListener')")).toBe(
       "addEventListener"
     );
-    expect(extractFailureDetail("Cannot redefine property: toString")).toBeNull();
+    /* This used to assert null, when only a QUOTED identifier was read. The
+     * bare form is now taken too, because one of the two messages the Wave 132
+     * failure was reproduced from does not quote it -- so quoted-only returned
+     * null on the case the field exists for. */
+    expect(extractFailureDetail("Cannot redefine property: toString")).toBe("toString");
   });
 
   it("REFUSES anything that is not a bare identifier, which is the security property", () => {
@@ -654,6 +669,137 @@ describe("extractFailureDetail", () => {
     );
     expect(formatClientFailureReference(report)).toBe(
       "global-error \u00b7 TypeError \u00b7 undefined_property_write \u00b7 toString \u00b7 1oml7c7env4-g.js:31:41369"
+    );
+  });
+});
+
+describe("the Wave 132 failure, REPRODUCED and then classified", () => {
+  /*
+   * THIS IS NO LONGER A HYPOTHESIS. The packaged artifact -- the byte-identical
+   * chunk, confirmed by the operator's own
+   * certutil -hashfile ... 3c90f403365d390ab6b7490fb57d5fd831fbc4450a8c4939d671a470ae2ecdd8
+   * -- was driven in Chromium with `Object.freeze(Object.prototype)` evaluated
+   * before any page script, and produced a report CHARACTER-IDENTICAL to the
+   * operator's, including all four frames:
+   *
+   *   {"boundary":"global-error","pathname":"/","digest":null,
+   *    "errorName":"TypeError","hadMessage":true,"shape":"unclassified",
+   *    "frames":[{"chunk":"2ic50n3d1m9j1.js","line":1,"column":8511},
+   *              {"chunk":"turbopack-32dm7-rex-nuz.js","line":1,"column":7475},
+   *              {"chunk":"turbopack-32dm7-rex-nuz.js","line":1,"column":7016},
+   *              {"chunk":"turbopack-32dm7-rex-nuz.js","line":1,"column":2868}]}
+   *
+   * Column 8511 is the `=` of `td.toString=` in Zod's errorUtil. V8's column
+   * convention was established empirically rather than from memory: a probe of
+   * this exact shape reports 1-based column 80 for an `=` at index 79.
+   *
+   * These are the two messages the reproduction produces. Both came back
+   * `unclassified` from the Wave 132 classifier, which is the whole reason the
+   * operator's report could not name the cause.
+   */
+  const FROZEN_PROTOTYPE = "Cannot assign to read only property 'toString' of object '#<Object>'";
+  const GETTER_ONLY = "Cannot set property toString of [object Object] which has only a getter";
+
+  it("classifies both reproduced messages and names the property", () => {
+    for (const message of [FROZEN_PROTOTYPE, GETTER_ONLY]) {
+      expect(classifyFailureShape(message), message).toBe("cannot_redefine_property");
+      expect(extractFailureDetail(message), message).toBe("toString");
+    }
+  });
+
+  it("takes the BARE identifier too, which the quoted-only reader missed", () => {
+    /* V8 quotes it in one of the two messages and not the other. A reader that
+     * only understood quotes returned null on exactly the case this field was
+     * added for. */
+    expect(extractFailureDetail(GETTER_ONLY)).toBe("toString");
+    expect(extractFailureDetail("Cannot redefine property: toString")).toBe("toString");
+  });
+
+  it("would have produced a report that names the cause", () => {
+    const report = describeClientFailure(
+      "global-error",
+      Object.assign(new TypeError(FROZEN_PROTOTYPE), { stack: REAL_CHROMIUM_STACK }),
+      "/"
+    );
+    expect(report.shape).toBe("cannot_redefine_property");
+    expect(report.detail).toBe("toString");
+    expect(report.errorName).toBe("TypeError");
+    expect(report.framesDropped).toBe(0);
+  });
+});
+
+describe("countDroppedFrames -- the blind spot that cost a round", () => {
+  it("is zero when our own frame is innermost, so the frame IS the throw site", () => {
+    expect(countDroppedFrames(REAL_CHROMIUM_STACK)).toBe(0);
+  });
+
+  it("COUNTS the frames of a script this report cannot name", () => {
+    /*
+     * The case that matters. If the host's hardening had used a throwing SETTER
+     * instead of a non-writable property, the innermost frames would belong to
+     * an injected script, and the first frame this report keeps would be the
+     * CALL SITE in our code -- indistinguishable, in Wave 132's report, from
+     * the throw site. Three rounds went into an offset on that assumption.
+     */
+    const stack = [
+      "TypeError: Cannot set property toString of [object Object] which has only a getter",
+      "    at set (chrome-extension://abcdefghijklmnop/harden.js:1:40)",
+      "    at Object.<anonymous> (file:///C:/Program%20Files/vendor/inject.js:2:9)",
+      "    at ry (http://127.0.0.1:36771/_next/static/chunks/2ic50n3d1m9j1.js:1:8511)",
+      "    at lK (http://127.0.0.1:36771/_next/static/chunks/turbopack-32dm7-rex-nuz.js:1:7475)"
+    ].join("\n");
+    expect(countDroppedFrames(stack)).toBe(2);
+    /* And the frames themselves still carry nothing from those two lines. */
+    const frames = extractFailureFrames(stack);
+    expect(frames).toEqual([
+      { chunk: "2ic50n3d1m9j1.js", line: 1, column: 8511 },
+      { chunk: "turbopack-32dm7-rex-nuz.js", line: 1, column: 7475 }
+    ]);
+    expect(JSON.stringify(frames)).not.toContain("chrome-extension");
+    expect(JSON.stringify(frames)).not.toContain("Program");
+  });
+
+  it("counts every frame when none of them is ours", () => {
+    const stack = [
+      "TypeError: nope",
+      "    at a (chrome-extension://x/one.js:1:1)",
+      "    at b (chrome-extension://x/two.js:1:1)"
+    ].join("\n");
+    expect(countDroppedFrames(stack)).toBe(2);
+    expect(extractFailureFrames(stack)).toEqual([]);
+  });
+
+  it("is total and bounded", () => {
+    for (const value of [null, undefined, 42, {}, [], Symbol("s")]) {
+      expect(countDroppedFrames(value)).toBe(0);
+    }
+    const huge = `TypeError: x\n${"    at a (ext://x/y.js:1:1)\n".repeat(5000)}`;
+    expect(countDroppedFrames(huge)).toBeLessThanOrEqual(MAX_FRAMES_DROPPED);
+  });
+
+  it("the server re-validates it, and the reference line says the frame is a CALL SITE", () => {
+    const read = readClientFailure({
+      boundary: "global-error",
+      pathname: "/",
+      framesDropped: 9999999,
+      frames: [{ chunk: "a.js", line: 1, column: 2 }]
+    });
+    expect(read?.framesDropped).toBe(0);
+
+    const withDrops = describeClientFailure(
+      "global-error",
+      Object.assign(new TypeError("Cannot redefine property: toString"), {
+        stack: [
+          "TypeError: Cannot redefine property: toString",
+          "    at set (chrome-extension://x/harden.js:1:40)",
+          "    at ry (http://h/_next/static/chunks/a.js:1:8511)"
+        ].join("\n")
+      }),
+      "/"
+    );
+    expect(withDrops.framesDropped).toBe(1);
+    expect(formatClientFailureReference(withDrops)).toBe(
+      "global-error \u00b7 TypeError \u00b7 cannot_redefine_property \u00b7 toString \u00b7 +1 a.js:1:8511"
     );
   });
 });

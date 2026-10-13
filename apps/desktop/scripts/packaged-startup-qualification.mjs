@@ -74,6 +74,27 @@ const FRAME_MARKERS = ["skip-link", 'class="shell"', 'id="main"'];
 const BOUNDARY_HEADLINES = ["could not start this page", "Something went wrong"];
 
 const SELF_TEST = process.argv.includes("--self-test");
+/*
+ * --harden-prototype REPRODUCES THE WAVE 132 OPERATOR FAILURE, and it is a
+ * reproduction rather than a guess. The installed chunk's SHA-256 was confirmed
+ * by the operator to be byte-identical to the local build
+ * (3c90f403365d390ab6b7490fb57d5fd831fbc4450a8c4939d671a470ae2ecdd8), and with
+ * `Object.freeze(Object.prototype)` evaluated before any page script this
+ * packaged artifact produced a report CHARACTER-IDENTICAL to the one the
+ * installed MSI wrote, all four frames included.
+ *
+ * It is kept because a reproduction nobody can re-run stops being evidence the
+ * moment the code moves. Like --self-test it INVERTS the result: a clean pass
+ * under a hardened prototype would mean this script had stopped detecting the
+ * failure it was built for.
+ *
+ * It exercises DIFFERENT channels from --self-test, which is the useful part:
+ * the measured run showed pageerror staying silent (React caught the throw)
+ * while the DOM and the diagnostics route both fired. --self-test is the
+ * mirror image. Between them, all three channels are demonstrated.
+ */
+const HARDEN_PROTOTYPE = process.argv.includes("--harden-prototype");
+const INVERTED = SELF_TEST || HARDEN_PROTOTYPE;
 const scratch = [];
 let failures = 0;
 
@@ -211,6 +232,16 @@ const reports = [];
 page.on("pageerror", (e) => pageErrors.push(`${e.name}: ${String(e.message).slice(0, 200)}`));
 page.on("request", (r) => { if (r.url().includes(DIAGNOSTICS_PATH)) reports.push(r.postData() ?? "(no body)"); });
 
+if (HARDEN_PROTOTYPE) {
+  /* The operator's failure, exactly: a non-writable inherited `toString`, which
+   * turns `obj.toString = fn` on a FRESH object literal into a TypeError in
+   * strict mode. Zod's errorUtil does precisely that at module-evaluation time
+   * in chunk 2ic50n3d1m9j1.js, column 8511. */
+  await page.addInitScript(() => {
+    Object.freeze(Object.prototype);
+  });
+}
+
 if (SELF_TEST) {
   /* A module-evaluation TypeError, injected before any page script runs --
    * the same shape as the failure this script exists to catch. */
@@ -271,14 +302,15 @@ console.log(
   "failure reproduces and this script's environment does not."
 );
 
-if (SELF_TEST) {
-  /* Inverted: a self-test that PASSES means this script cannot detect the
-   * failure it exists for, which is worse than a red build. */
+if (INVERTED) {
+  /* Inverted: a pass here means this script cannot detect the failure it exists
+   * for, which is worse than a red build. */
+  const mode = HARDEN_PROTOTYPE ? "HARDENED-PROTOTYPE REPRODUCTION" : "SELF-TEST";
   if (clean) {
-    console.log("\nSELF-TEST FAILED: a module-evaluation TypeError was injected and every check still passed.");
+    console.log(`\n${mode} FAILED: the failure was injected and every check still passed.`);
     process.exit(1);
   }
-  console.log("\nSELF-TEST PASSED: the injected module-evaluation TypeError was detected.");
+  console.log(`\n${mode} PASSED: the injected failure was detected.`);
   process.exit(0);
 }
 process.exit(clean ? 0 : 1);
